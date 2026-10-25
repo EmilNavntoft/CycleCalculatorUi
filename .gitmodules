@@ -1,0 +1,3 @@
+[submodule "CycleCalculator"]
+	path = CycleCalculator
+	url = https://github.com/EmilNavntoft/CycleCalculator.git
