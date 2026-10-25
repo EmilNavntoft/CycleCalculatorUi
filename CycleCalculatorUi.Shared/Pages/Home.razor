@@ -1,14 +1,1091 @@
-﻿@page "/"
-@using CycleCalculatorUi.Shared.Services
-@inject IFormFactor FormFactor
+@page "/"
+@implements IAsyncDisposable
+@using CycleCalculator.CycleModel.Fluids
+@using CycleCalculator.CycleModel.Model
+@using CycleCalculator.CycleModel.Model.BaseComponents
+@using CycleCalculator.CycleModel.Model.Connectors
+@using CycleCalculator.CycleModel.Model.En12900
+@using CycleCalculator.CycleModel.Solver
+@using System.Globalization
+@using System.Text.Json
+@inject IJSRuntime Js
 
-<PageTitle>Home</PageTitle>
+<PageTitle>Cycle workspace</PageTitle>
 
-<h1>Hello, world!</h1>
+<div class="editor-page" @ref="_editorRoot">
+    <header class="editor-header">
+        <a class="brand" href="" aria-label="CycleCalculator workspace">
+            <span class="brand-mark" aria-hidden="true">C</span>
+            <span>Cycle<span class="brand-light">Calculator</span></span>
+        </a>
+        <div class="header-divider"></div>
+        <div class="document-title">
+            <strong>Untitled system</strong>
+            <span>Design workspace</span>
+        </div>
+        <div class="header-actions">
+            <span class="mode-badge"><span></span> Design mode</span>
+            <button class="run-button" type="button"
+                    disabled="@(_placedComponents.Count == 0 || _isCalculating)"
+                    @onclick="CalculateSystemAsync">
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M5 3.5v9l7-4.5z"/>
+                </svg>
+                @(_isCalculating ? "Calculating…" : "Calculate")
+            </button>
+        </div>
+    </header>
 
-Welcome to your new app running on <em>@factor</em> using <em>@platform</em>.
+    <main class="editor-layout">
+        <aside class="panel component-panel">
+            <div class="panel-heading">
+                <div>
+                    <span class="eyebrow">LIBRARY</span>
+                    <h1>Components</h1>
+                </div>
+                <span class="component-count">@FilteredComponents.Count()</span>
+            </div>
+            <label class="search-box">
+                <svg viewBox="0 0 20 20" aria-hidden="true">
+                    <circle cx="8.8" cy="8.8" r="5.8"/>
+                    <path d="m13.2 13.2 4 4"/>
+                </svg>
+                <input @bind="_searchTerm" @bind:event="oninput" placeholder="Search components" aria-label="Search components"/>
+                @if (!string.IsNullOrWhiteSpace(_searchTerm))
+                {
+                    <button type="button" class="clear-search" @onclick="() => _searchTerm = string.Empty" aria-label="Clear search">×</button>
+                }
+            </label>
+            <p class="panel-hint">Drag a component onto the canvas, or tap to add it. Click its ports to connect components.</p>
+            <div class="component-list">
+                @if (!FilteredComponents.Any())
+                {
+                    <p class="empty-search">No components match your search.</p>
+                }
+                @foreach (var component in FilteredComponents)
+                {
+                    <button class="palette-component" type="button" data-palette-kind="@component.ModelType" aria-label="Add @component.Name">
+                        <span class="palette-icon">
+                            <ComponentGlyph ModelType="@component.ModelType"/>
+                        </span>
+                        <span class="palette-copy">
+                            <strong>@component.Name</strong>
+                            <span>@component.Category</span>
+                        </span>
+                        <svg class="add-mark" viewBox="0 0 16 16" aria-hidden="true">
+                            <path d="M8 3v10M3 8h10"/>
+                        </svg>
+                    </button>
+                }
+            </div>
+            <div class="library-footer">
+                <span class="info-mark" aria-hidden="true">i</span>
+                <span>Components are initialized from these settings when you calculate the system.</span>
+            </div>
+        </aside>
+
+        <section class="workspace-panel" aria-label="System design canvas">
+            <div class="canvas-toolbar">
+                <div class="canvas-title">
+                    <span class="canvas-status-dot"></span>
+                    <strong>System canvas</strong>
+                    <span class="canvas-separator">/</span>
+                    <span class="canvas-subtitle">Untitled system</span>
+                </div>
+                <div class="canvas-tools">
+                    <span class="zoom-label">100%</span>
+                    <button class="tool-button" type="button" @onclick="ClearCanvas" disabled="@(_placedComponents.Count == 0)" aria-label="Clear canvas" title="Clear canvas">
+                        <svg viewBox="0 0 20 20" aria-hidden="true">
+                            <path d="M4 6h12M8 6V4h4v2m2 0-.7 10H6.7L6 6m2.5 2v5m3-5v5"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div class="canvas-scroll" @ref="_canvasSurface">
+                <div class="canvas-workspace">
+                    @if (_placedComponents.Count == 0)
+                    {
+                        <div class="canvas-empty-state">
+                            <div class="empty-canvas-icon">
+                                <svg viewBox="0 0 56 56" aria-hidden="true">
+                                    <rect x="7.5" y="9.5" width="41" height="37" rx="7"/>
+                                    <path d="M17 28h7l4-7 6 14 4-7h2"/>
+                                    <circle cx="17" cy="28" r="2"/>
+                                    <circle cx="40" cy="28" r="2"/>
+                                </svg>
+                            </div>
+                            <strong>Your canvas is ready</strong>
+                            <span>Drag components here to start laying out your system.</span>
+                            <span class="empty-state-tip">You can also tap any component in the library.</span>
+                        </div>
+                    }
+                    <svg class="connection-layer" aria-hidden="true">
+                        @foreach (var connection in _connections)
+                        {
+                            var from = GetPortPosition(connection.FromComponentId, connection.FromPortId);
+                            var to = GetPortPosition(connection.ToComponentId, connection.ToPortId);
+                            <line x1="@from.X" y1="@from.Y" x2="@to.X" y2="@to.Y"/>
+                        }
+                    </svg>
+                    @foreach (var component in _placedComponents)
+                    {
+                        <div class="placed-component"
+                             data-instance-id="@component.Id"
+                             style="left:@(component.X)px;top:@(component.Y)px"
+                             aria-label="@component.Settings.Name, placed component">
+                            <span class="placed-glyph" style="@GetGlyphTransform(component)">
+                                <ComponentGlyph ModelType="@component.ModelType"/>
+                            </span>
+                            @foreach (var port in GetDefinition(component.ModelType).Ports)
+                            {
+                                var isConnected = IsPortConnected(component.Id, port.Id);
+                                <button class="port-marker @(isConnected ? "connected" : "") @(IsPendingPort(component.Id, port.Id) ? "pending" : "")"
+                                        type="button"
+                                        data-port-component="@component.Id"
+                                        data-port-id="@port.Id"
+                                        style="left:@(GetPortOffset(component, port).X)px;top:@(GetPortOffset(component, port).Y)px"
+                                        aria-label="@($"{component.Name} {port.Label} port")"
+                                        title="@($"{component.Name} — {port.Label} (Port {port.Id})")"
+                                        @onclick="() => SelectPort(component.Id, port.Id)"></button>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+            <footer class="canvas-footer">
+                <span class="connection-status">@ConnectionStatus</span>
+                @if (_calculationMessage is not null)
+                {
+                    <span class="calculation-message @(_calculationFailed || (_calculationResults is not null && _solvedDesignFingerprint != GetDesignFingerprint(_placedComponents, _connections)) ? "error" : "success")"
+                          role="@(_calculationFailed ? "alert" : "status")">
+                        @CalculationMessage
+                    </span>
+                }
+                <span>@_placedComponents.Count component@(_placedComponents.Count == 1 ? "" : "s")</span>
+            </footer>
+        </section>
+
+        <aside class="panel inspector-panel">
+            <div class="panel-heading">
+                <div>
+                    <span class="eyebrow">PROPERTIES</span>
+                    <h2>Inspector</h2>
+                </div>
+                <svg class="inspector-sliders" viewBox="0 0 20 20" aria-hidden="true">
+                    <path d="M3 5h14M3 10h14M3 15h14"/>
+                    <circle cx="7" cy="5" r="2"/>
+                    <circle cx="12" cy="10" r="2"/>
+                    <circle cx="8" cy="15" r="2"/>
+                </svg>
+            </div>
+            @if (SelectedComponent is { } selected)
+            {
+                <div class="inspector-component-icon">
+                    <ComponentGlyph ModelType="@selected.ModelType"/>
+                </div>
+                <div class="inspector-component-name">@selected.Settings.Name</div>
+                <div class="inspector-model-type">@selected.ModelType</div>
+                <div class="inspector-divider"></div>
+                @if (GetComponentResults(selected.Id) is { } portResults)
+                {
+                    <div class="calculation-results">
+                        <div class="settings-section-title">CALCULATED PORT VALUES</div>
+                        @foreach (var result in portResults)
+                        {
+                            <div class="port-result">
+                                <strong>@result.Label</strong>
+                                <span>Flow <b>@FormatResult(result.MassFlow) kg/s</b></span>
+                                <span>Pressure <b>@FormatResult(result.Pressure) bar</b></span>
+                                <span>Temperature <b>@FormatResult(result.Temperature) °C</b></span>
+                                <span>Enthalpy <b>@FormatResult(result.Enthalpy) kJ/kg</b></span>
+                            </div>
+                        }
+                    </div>
+                }
+                <div class="settings-form">
+                    <label class="setting-field">
+                        <span>Component name</span>
+                        <input @bind="selected.Settings.Name" maxlength="80"/>
+                    </label>
+                    <div class="settings-row">
+                        <label class="setting-field">
+                            <span>CoolProp fluid</span>
+                            <select @bind="selected.Settings.Fluid">
+                                @foreach (var fluid in FluidOptions)
+                                {
+                                    <option value="@fluid">@fluid</option>
+                                }
+                            </select>
+                        </label>
+                        <label class="setting-field">
+                            <span>Backend</span>
+                            <select @bind="selected.Settings.Backend">
+                                @foreach (var backend in BackendOptions)
+                                {
+                                    <option value="@backend">@backend</option>
+                                }
+                            </select>
+                        </label>
+                    </div>
+                    @if (selected.ModelType == "SimpleCompressor")
+                    {
+                        <label class="setting-field">
+                            <span>Isentropic efficiency <small>(0–1)</small></span>
+                            <input type="number" min="0" max="1" step="any" @bind="selected.Settings.Efficiency"/>
+                        </label>
+                        <label class="setting-field">
+                            <span>Mass flow <small>(kg/s)</small></span>
+                            <input type="number" min="0" step="any" @bind="selected.Settings.MassFlow"/>
+                        </label>
+                        <label class="setting-field">
+                            <span>Discharge pressure <small>(bar absolute)</small></span>
+                            <input type="number" min="0" step="any" @bind="selected.Settings.DischargePressure"/>
+                        </label>
+                    }
+                    else if (selected.ModelType == "ExpansionValve")
+                    {
+                        <label class="setting-field">
+                            <span>Outlet pressure <small>(bar absolute)</small></span>
+                            <input type="number" step="any" @bind="selected.Settings.OutletPressure"/>
+                        </label>
+                    }
+                    else if (selected.ModelType == "HeatExchanger")
+                    {
+                        <div class="settings-section-title">SECONDARY STREAM</div>
+                        <div class="settings-row">
+                            <label class="setting-field">
+                                <span>CoolProp fluid</span>
+                                <select @bind="selected.Settings.Fluid2">
+                                    @foreach (var fluid in FluidOptions)
+                                    {
+                                        <option value="@fluid">@fluid</option>
+                                    }
+                                </select>
+                            </label>
+                            <label class="setting-field">
+                                <span>Backend</span>
+                                <select @bind="selected.Settings.Backend2">
+                                    @foreach (var backend in BackendOptions)
+                                    {
+                                        <option value="@backend">@backend</option>
+                                    }
+                                </select>
+                            </label>
+                        </div>
+                        <label class="setting-field">
+                            <span>Effectiveness <small>(0–1)</small></span>
+                            <input type="number" min="0" max="1" step="any" @bind="selected.Settings.Efficiency"/>
+                        </label>
+                    }
+                    else if (selected.ModelType == "TemperatureBoundary")
+                    {
+                        <label class="setting-field">
+                            <span>Outlet temperature <small>(°C)</small></span>
+                            <input type="number" step="any" @bind="selected.Settings.OutletTemperature"/>
+                        </label>
+                    }
+                    else if (selected.ModelType == "FixedEfficiencyEjector")
+                    {
+                        <label class="setting-field">
+                            <span>Isentropic efficiency <small>(0–1)</small></span>
+                            <input type="number" min="0" max="1" step="any" @bind="selected.Settings.Efficiency"/>
+                        </label>
+                        <label class="setting-field">
+                            <span>Discharge pressure <small>(bar absolute, optional)</small></span>
+                            <input type="number" min="0" step="any" @bind="selected.Settings.DischargePressure"/>
+                        </label>
+                    }
+                    else if (selected.ModelType == "En12900Compressor")
+                    {
+                        <label class="setting-field">
+                            <span>Mass flow unit</span>
+                            <select @bind="selected.Settings.MassFlowUnit">
+                                <option value="KilogramsPerSecond">Kilograms per second</option>
+                                <option value="KilogramsPerHour">Kilograms per hour</option>
+                            </select>
+                        </label>
+                        <label class="setting-field">
+                            <span>Power unit</span>
+                            <select @bind="selected.Settings.PowerUnit">
+                                <option value="Watts">Watts</option>
+                                <option value="Kilowatts">Kilowatts</option>
+                            </select>
+                        </label>
+                        <label class="setting-field">
+                            <span>Discharge polynomial variable</span>
+                            <select @bind="selected.Settings.DischargeVariable">
+                                <option value="SaturationTemperature">Saturation temperature</option>
+                                <option value="Pressure">Pressure</option>
+                            </select>
+                        </label>
+                        <label class="setting-field">
+                            <span>Discharge condition</span>
+                            <select @bind="selected.Settings.DischargeConditionType">
+                                <option value="Pressure">Pressure</option>
+                                <option value="SaturationTemperature">Saturation temperature</option>
+                            </select>
+                        </label>
+                        <label class="setting-field">
+                            <span>Discharge condition value <small>(bar absolute or °C)</small></span>
+                            <input type="number" step="any" @bind="selected.Settings.DischargeConditionValue"/>
+                        </label>
+                        <label class="setting-field">
+                            <span>Mass-flow map suction superheat <small>(°C)</small></span>
+                            <input type="number" min="0" step="any" @bind="selected.Settings.MassFlowSuctionSuperheat"/>
+                        </label>
+                        <label class="setting-field">
+                            <span>Mass-flow polynomial coefficients <small>(10, comma-separated)</small></span>
+                            <textarea rows="2" @bind="selected.Settings.MassFlowCoefficients" placeholder="c0, c1, c2, c3, c4, c5, c6, c7, c8, c9"></textarea>
+                        </label>
+                        <label class="setting-field">
+                            <span>Power map suction superheat <small>(°C)</small></span>
+                            <input type="number" min="0" step="any" @bind="selected.Settings.PowerSuctionSuperheat"/>
+                        </label>
+                        <label class="setting-field">
+                            <span>Power polynomial coefficients <small>(10, comma-separated)</small></span>
+                            <textarea rows="2" @bind="selected.Settings.PowerCoefficients" placeholder="c0, c1, c2, c3, c4, c5, c6, c7, c8, c9"></textarea>
+                        </label>
+                        <label class="setting-check">
+                            <input type="checkbox" @bind="selected.Settings.UseCurrentPolynomial"/>
+                            <span>Use optional current-consumption polynomial</span>
+                        </label>
+                        @if (selected.Settings.UseCurrentPolynomial)
+                        {
+                            <label class="setting-field">
+                                <span>Current map suction superheat <small>(°C)</small></span>
+                                <input type="number" min="0" step="any" @bind="selected.Settings.CurrentSuctionSuperheat"/>
+                            </label>
+                            <label class="setting-field">
+                                <span>Current polynomial coefficients <small>(10, comma-separated)</small></span>
+                                <textarea rows="2" @bind="selected.Settings.CurrentCoefficients" placeholder="c0, c1, c2, c3, c4, c5, c6, c7, c8, c9"></textarea>
+                            </label>
+                        }
+                        <p class="coefficient-hint">Coefficient order: 1, x, y, x², xy, y², x³, x²y, xy², y³.</p>
+                    }
+                </div>
+                <div class="transform-controls" aria-label="Component orientation">
+                    <button type="button" @onclick="() => RotateComponent(selected.Id, -90)" aria-label="Rotate counterclockwise" title="Rotate counterclockwise">
+                        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4.5 8A6 6 0 1 1 4 11"/><path d="M4.5 3.5V8H9"/></svg>
+                        <span>CCW</span>
+                    </button>
+                    <button type="button" @onclick="() => RotateComponent(selected.Id, 90)" aria-label="Rotate clockwise" title="Rotate clockwise">
+                        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.5 8A6 6 0 1 0 16 11"/><path d="M15.5 3.5V8H11"/></svg>
+                        <span>CW</span>
+                    </button>
+                    <button type="button" class="transform-icon-button" @onclick="() => FlipComponent(selected.Id, horizontal: true)" aria-label="Flip horizontally" title="Flip horizontally">
+                        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v14M7 6 4 9l3 3m6-6 3 3-3 3"/></svg>
+                    </button>
+                    <button type="button" class="transform-icon-button" @onclick="() => FlipComponent(selected.Id, horizontal: false)" aria-label="Flip vertically" title="Flip vertically">
+                        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 10h14M6 7l3-3 3 3m-6 6 3 3 3-3"/></svg>
+                    </button>
+                    <span class="rotation-value">@selected.Rotation°</span>
+                </div>
+                <div class="inspector-note">
+                    <span class="info-mark" aria-hidden="true">i</span>
+                    <span>These values are held in this design session and used to create the calculation model.</span>
+                </div>
+                <button type="button" class="remove-component" @onclick="() => RemoveComponent(selected.Id)">
+                    <svg viewBox="0 0 20 20" aria-hidden="true">
+                        <path d="M4 6h12M8 6V4h4v2m2 0-.7 10H6.7L6 6"/>
+                    </svg>
+                    Remove from canvas
+                </button>
+            }
+            else
+            {
+                <div class="inspector-empty">
+                    <div class="inspector-empty-icon">
+                        <svg viewBox="0 0 48 48" aria-hidden="true">
+                            <rect x="8" y="7" width="32" height="34" rx="5"/>
+                            <path d="M16 17h16M16 24h16M16 31h9"/>
+                        </svg>
+                    </div>
+                    <strong>Nothing selected</strong>
+                    <span>Select a component on the canvas to view its details.</span>
+                </div>
+            }
+        </aside>
+    </main>
+</div>
 
 @code {
-    private string factor => FormFactor.GetFormFactor();
-    private string platform => FormFactor.GetPlatform();
+
+    private static readonly string[] FluidOptions =
+    [
+        CoolPropFluids.Air,
+        CoolPropFluids.CarbonDioxide,
+        CoolPropFluids.R134a,
+        CoolPropFluids.Water
+    ];
+
+    private static readonly string[] BackendOptions = [CoolPropBackends.HEOS];
+
+    private static readonly ComponentDefinition[] Components =
+    [
+        new("SimpleCompressor", "Simple compressor", "Compressors",
+            [PortAt("A", "Inlet", PortDirection.Inlet, 28, 38),
+                PortAt("B", "Outlet", PortDirection.Outlet, 92, 38)]),
+        new("En12900Compressor", "EN12900 compressor", "Compressors",
+            [PortAt("A", "Inlet", PortDirection.Inlet, 28, 38),
+                PortAt("B", "Outlet", PortDirection.Outlet, 92, 38)]),
+        new("HeatExchanger", "Heat exchanger", "Heat transfer",
+        [
+            PortAt("A", "Primary inlet", PortDirection.Inlet, 26, 28),
+            PortAt("B", "Primary outlet", PortDirection.Outlet, 94, 28),
+            PortAt("C", "Secondary inlet", PortDirection.Inlet, 94, 48),
+            PortAt("D", "Secondary outlet", PortDirection.Outlet, 26, 48)
+        ]),
+        new("ExpansionValve", "Expansion valve", "Flow control",
+            [PortAt("A", "Inlet", PortDirection.Inlet, 24, 38),
+                PortAt("B", "Outlet", PortDirection.Outlet, 96, 38)]),
+        new("Receiver", "Receiver", "Storage",
+            [PortAt("A", "Inlet", PortDirection.Inlet, 28, 38),
+                PortAt("B", "Liquid outlet", PortDirection.Outlet, 92, 38),
+                PortAt("C", "Vapor outlet", PortDirection.Outlet, 60, 9)]),
+        new("Split", "Split", "Flow junctions",
+            [PortAt("A", "Inlet", PortDirection.Inlet, 26, 38),
+                PortAt("B", "Outlet", PortDirection.Outlet, 78, 20),
+                PortAt("C", "Outlet 2", PortDirection.Outlet, 78, 56)]),
+        new("Merge", "Merge", "Flow junctions",
+            [PortAt("A", "Inlet", PortDirection.Inlet, 26, 20),
+                PortAt("B", "Outlet", PortDirection.Outlet, 94, 38),
+                PortAt("C", "Inlet 2", PortDirection.Inlet, 26, 56)]),
+        new("TemperatureBoundary", "Temperature boundary", "Boundaries",
+            [PortAt("A", "Inlet", PortDirection.Inlet, 24, 38),
+                PortAt("B", "Outlet", PortDirection.Outlet, 96, 38)]),
+        new("FixedEfficiencyEjector", "Ejector", "Flow control",
+        [
+            PortAt("A", "Motive inlet", PortDirection.Inlet, 26, 27),
+            PortAt("B", "Discharge outlet", PortDirection.Outlet, 94, 38),
+            PortAt("C", "Suction inlet", PortDirection.Inlet, 26, 49)
+        ])
+    ];
+
+    private readonly List<PlacedComponent> _placedComponents = [];
+    private readonly List<ComponentConnection> _connections = [];
+    private string _searchTerm = string.Empty;
+    private string? _selectedComponentId;
+    private PendingPort? _pendingPort;
+    private string? _connectionMessage;
+    private string? _calculationMessage;
+    private string? _solvedDesignFingerprint;
+    private Dictionary<string, IReadOnlyList<PortResult>>? _calculationResults;
+    private bool _isCalculating;
+    private bool _calculationFailed;
+    private ElementReference _editorRoot;
+    private ElementReference _canvasSurface;
+    private IJSObjectReference? _canvasModule;
+    private DotNetObjectReference<Home>? _dotNetReference;
+
+    private IEnumerable<ComponentDefinition> FilteredComponents =>
+        Components.Where(component =>
+            component.Name.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ||
+            component.ModelType.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase) ||
+            component.Category.Contains(_searchTerm, StringComparison.OrdinalIgnoreCase));
+
+    private PlacedComponent? SelectedComponent =>
+        _placedComponents.FirstOrDefault(component => component.Id == _selectedComponentId);
+
+    private string ConnectionStatus => _pendingPort is not null
+        ? "Select a port on another component to connect."
+        : _connectionMessage ?? "Click two component ports to connect them.";
+
+    private string CalculationMessage =>
+        _calculationResults is not null &&
+        _solvedDesignFingerprint != GetDesignFingerprint(_placedComponents, _connections)
+            ? "The design changed after this calculation. Calculate again to refresh results."
+            : _calculationMessage ?? string.Empty;
+
+    private static ComponentDefinition GetDefinition(string modelType) =>
+        Components.Single(component => component.ModelType == modelType);
+
+    private static PortDefinition PortAt(
+        string id,
+        string label,
+        PortDirection direction,
+        double x,
+        double y) =>
+        new(id, label, direction, x, y);
+
+    private async Task CalculateSystemAsync()
+    {
+        if (_isCalculating)
+        {
+            return;
+        }
+
+        _isCalculating = true;
+        _calculationFailed = false;
+        _calculationMessage = null;
+        _calculationResults = null;
+        _solvedDesignFingerprint = null;
+
+        try
+        {
+            PlacedComponent[] designComponents = [.. _placedComponents];
+            ComponentConnection[] designConnections = [.. _connections];
+            string designFingerprint = GetDesignFingerprint(designComponents, designConnections);
+            var modelById = CreateModelComponents(designComponents);
+            ConnectModelPorts(designComponents, designConnections, modelById);
+            CycleComponent[] modelComponents = [.. modelById.Values];
+
+            await InvokeAsync(StateHasChanged);
+            await Task.Run(() => Orchestrator.Solve(modelComponents));
+
+            _calculationResults = BuildPortResults(designComponents, modelById);
+            _solvedDesignFingerprint = designFingerprint;
+            _calculationMessage = $"Solved {modelComponents.Length} components.";
+        }
+        catch (Exception exception)
+        {
+            _calculationFailed = true;
+            _calculationMessage = $"Calculation failed: {exception.Message}";
+        }
+        finally
+        {
+            _isCalculating = false;
+        }
+    }
+
+    private static Dictionary<string, CycleComponent> CreateModelComponents(
+        IReadOnlyList<PlacedComponent> placedComponents)
+    {
+        if (placedComponents.Count == 0)
+        {
+            throw new InvalidOperationException("Add components to the canvas before calculating.");
+        }
+
+        var models = new Dictionary<string, CycleComponent>();
+        foreach (var placed in placedComponents)
+        {
+            try
+            {
+                string name = string.IsNullOrWhiteSpace(placed.Settings.Name)
+                    ? throw new InvalidOperationException("Component name cannot be empty.")
+                    : placed.Settings.Name.Trim();
+                string fluid = placed.Settings.Fluid;
+                string backend = placed.Settings.Backend;
+                var settings = placed.Settings;
+
+                CycleComponent model = placed.ModelType switch
+                {
+                    "SimpleCompressor" => new SimpleCompressor(
+                        name, fluid, backend,
+                        ReadNumber(settings.Efficiency, "isentropic efficiency"),
+                        ReadNumber(settings.MassFlow, "mass flow"),
+                        ReadNumber(settings.DischargePressure, "discharge pressure")),
+                    "En12900Compressor" => CreateEn12900Compressor(name, settings),
+                    "HeatExchanger" => new HeatExchanger(
+                        name, fluid, backend, settings.Fluid2, settings.Backend2,
+                        ReadNumber(settings.Efficiency, "effectiveness")),
+                    "ExpansionValve" => new ExpansionValve(
+                        name, fluid, backend,
+                        ReadNumber(settings.OutletPressure, "outlet pressure")),
+                    "Receiver" => new Receiver(name, fluid, backend),
+                    "Split" => new Split(name, fluid, backend),
+                    "Merge" => new Merge(name, fluid, backend),
+                    "TemperatureBoundary" => new TemperatureBoundary(
+                        name, fluid, backend,
+                        ReadNumber(settings.OutletTemperature, "outlet temperature")),
+                    "FixedEfficiencyEjector" => new FixedEfficiencyEjector(
+                        name, fluid, backend,
+                        ReadNumber(settings.Efficiency, "isentropic efficiency"),
+                        ReadOptionalNumber(settings.DischargePressure, "discharge pressure")),
+                    _ => throw new InvalidOperationException($"Unsupported component type '{placed.ModelType}'.")
+                };
+                models.Add(placed.Id, model);
+            }
+            catch (Exception exception)
+            {
+                throw new InvalidOperationException(
+                    $"Could not initialize {placed.Settings.Name} ({placed.ModelType}): {exception.Message}",
+                    exception);
+            }
+        }
+
+        return models;
+    }
+
+    private static En12900Compressor CreateEn12900Compressor(string name, ComponentSettings settings)
+    {
+        var massFlowPolynomial = CreatePolynomial(
+            settings.MassFlowCoefficients,
+            settings.MassFlowSuctionSuperheat,
+            "mass-flow");
+        var powerPolynomial = CreatePolynomial(
+            settings.PowerCoefficients,
+            settings.PowerSuctionSuperheat,
+            "power");
+        var currentPolynomial = settings.UseCurrentPolynomial
+            ? CreatePolynomial(settings.CurrentCoefficients, settings.CurrentSuctionSuperheat, "current")
+            : null;
+        var dischargeConditionValue = ReadNumber(
+            settings.DischargeConditionValue, "discharge condition");
+        var dischargeCondition = settings.DischargeConditionType switch
+        {
+            "Pressure" => CompressorDischargeCondition.AtPressure(dischargeConditionValue),
+            "SaturationTemperature" =>
+                CompressorDischargeCondition.AtSaturationTemperature(dischargeConditionValue),
+            _ => throw new InvalidOperationException("Select a valid EN 12900 discharge condition.")
+        };
+
+        return new En12900Compressor(
+            name,
+            settings.Fluid,
+            settings.Backend,
+            massFlowPolynomial,
+            powerPolynomial,
+            ParseEnum<En12900MassFlowUnit>(settings.MassFlowUnit, "mass-flow unit"),
+            ParseEnum<En12900PowerUnit>(settings.PowerUnit, "power unit"),
+            ParseEnum<En12900DischargeVariable>(settings.DischargeVariable, "discharge polynomial variable"),
+            dischargeCondition,
+            currentPolynomial);
+    }
+
+    private static En12900Polynomial CreatePolynomial(string coefficients, string superheat, string label)
+    {
+        string[] values = coefficients.Split(',', StringSplitOptions.TrimEntries);
+        if (values.Length != 10)
+        {
+            throw new InvalidOperationException(
+                $"The {label} polynomial must contain exactly 10 comma-separated coefficients.");
+        }
+
+        double[] parsedCoefficients = values
+            .Select((value, index) => ReadNumber(value, $"{label} coefficient {index + 1}"))
+            .ToArray();
+        return new En12900Polynomial(
+            parsedCoefficients,
+            ReadNumber(superheat, $"{label} map suction superheat"));
+    }
+
+    private static TEnum ParseEnum<TEnum>(string value, string label) where TEnum : struct, Enum =>
+        Enum.TryParse(value, true, out TEnum parsed) && Enum.IsDefined(parsed)
+            ? parsed
+            : throw new InvalidOperationException($"Select a valid {label}.");
+
+    private static double ReadNumber(string value, string label)
+    {
+        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double result) ||
+            !double.IsFinite(result))
+        {
+            throw new InvalidOperationException($"Enter a finite number for {label}.");
+        }
+
+        return result;
+    }
+
+    private static double? ReadOptionalNumber(string value, string label) =>
+        string.IsNullOrWhiteSpace(value) ? null : ReadNumber(value, label);
+
+    private static void ConnectModelPorts(
+        IReadOnlyList<PlacedComponent> placedComponents,
+        IReadOnlyList<ComponentConnection> connections,
+        IReadOnlyDictionary<string, CycleComponent> modelById)
+    {
+        foreach (var component in placedComponents)
+        {
+            foreach (var port in GetDefinition(component.ModelType).Ports)
+            {
+                if (!connections.Any(connection =>
+                        (connection.FromComponentId == component.Id && connection.FromPortId == port.Id) ||
+                        (connection.ToComponentId == component.Id && connection.ToPortId == port.Id)))
+                {
+                    throw new InvalidOperationException(
+                        $"Connect {component.Settings.Name} — {port.Label} before calculating.");
+                }
+            }
+        }
+
+        var connectedComponents = new Dictionary<string, HashSet<string>>();
+        foreach (var component in placedComponents)
+        {
+            connectedComponents[component.Id] = [];
+        }
+
+        foreach (var connection in connections)
+        {
+            var from = modelById[connection.FromComponentId];
+            var to = modelById[connection.ToComponentId];
+            Port fromPort = GetModelPort(from, connection.FromPortId);
+            Port toPort = GetModelPort(to, connection.ToPortId);
+            try
+            {
+                fromPort.ConnectTo(toPort);
+            }
+            catch (Exception exception)
+            {
+                throw new InvalidOperationException(
+                    $"Could not connect {from.Name}.{fromPort.Identifier} to {to.Name}.{toPort.Identifier}: {exception.Message}",
+                    exception);
+            }
+
+            connectedComponents[connection.FromComponentId].Add(connection.ToComponentId);
+            connectedComponents[connection.ToComponentId].Add(connection.FromComponentId);
+        }
+
+        var visited = new HashSet<string>();
+        var pending = new Queue<string>();
+        pending.Enqueue(placedComponents[0].Id);
+        while (pending.Count > 0)
+        {
+            string current = pending.Dequeue();
+            if (!visited.Add(current))
+            {
+                continue;
+            }
+
+            foreach (string neighbor in connectedComponents[current])
+            {
+                pending.Enqueue(neighbor);
+            }
+        }
+
+        if (visited.Count != placedComponents.Count)
+        {
+            throw new InvalidOperationException("All components must belong to one connected system.");
+        }
+    }
+
+    private static Port GetModelPort(CycleComponent component, string portId)
+    {
+        if (!Enum.TryParse(portId, true, out PortIdentifier identifier))
+        {
+            throw new InvalidOperationException($"Unknown model port '{portId}'.");
+        }
+
+        return component.Ports.SingleOrDefault(port => port.Identifier == identifier)
+               ?? throw new InvalidOperationException(
+                   $"{component.Name} does not have a model port '{portId}'.");
+    }
+
+    private static Dictionary<string, IReadOnlyList<PortResult>> BuildPortResults(
+        IReadOnlyList<PlacedComponent> placedComponents,
+        IReadOnlyDictionary<string, CycleComponent> modelById) =>
+        placedComponents.ToDictionary(
+            component => component.Id,
+            component =>
+            {
+                CycleComponent model = modelById[component.Id];
+                return (IReadOnlyList<PortResult>)model.Ports.Select(port =>
+                {
+                    PortDefinition definition = GetDefinition(component.ModelType)
+                        .Ports.Single(item => item.Id == port.Identifier.ToString());
+                    return new PortResult(
+                        definition.Label, port.MassFlow, port.Pressure, port.Temperature, port.Enthalpy);
+                }).ToArray();
+            });
+
+    private IReadOnlyList<PortResult>? GetComponentResults(string componentId) =>
+        _calculationResults is not null &&
+        _solvedDesignFingerprint == GetDesignFingerprint(_placedComponents, _connections) &&
+        _calculationResults.TryGetValue(componentId, out var results)
+            ? results
+            : null;
+
+    private static string GetDesignFingerprint(
+        IReadOnlyList<PlacedComponent> placedComponents,
+        IReadOnlyList<ComponentConnection> connections) =>
+        JsonSerializer.Serialize(new
+        {
+            Components = placedComponents.OrderBy(component => component.Id)
+                .Select(component => new { component.Id, component.ModelType, component.Settings }),
+            Connections = connections.OrderBy(connection => connection.FromComponentId)
+                .ThenBy(connection => connection.FromPortId)
+                .ThenBy(connection => connection.ToComponentId)
+                .ThenBy(connection => connection.ToPortId)
+        });
+
+    private static string FormatResult(double value) =>
+        value.ToString("G6", CultureInfo.InvariantCulture);
+
+    private (double X, double Y) GetPortPosition(string componentId, string portId)
+    {
+        var component = _placedComponents.Single(item => item.Id == componentId);
+        var port = GetDefinition(component.ModelType).Ports.Single(item => item.Id == portId);
+        return GetPortPosition(component, port);
+    }
+
+    private static (double X, double Y) GetPortPosition(PlacedComponent component, PortDefinition port)
+    {
+        var offset = GetPortOffset(component, port);
+        return (component.X + offset.X, component.Y + offset.Y);
+    }
+
+    private static (double X, double Y) GetPortOffset(PlacedComponent component, PortDefinition port)
+    {
+        double x = port.X - 60;
+        double y = port.Y - 38;
+        if (component.FlipHorizontal)
+        {
+            x = -x;
+        }
+
+        if (component.FlipVertical)
+        {
+            y = -y;
+        }
+
+        for (int turn = 0; turn < component.Rotation / 90; turn++)
+        {
+            (x, y) = (-y, x);
+        }
+
+        return (60 + x, 38 + y);
+    }
+
+    private static string GetGlyphTransform(PlacedComponent component) =>
+        $"transform:rotate({component.Rotation}deg) scaleX({(component.FlipHorizontal ? -1 : 1)}) scaleY({(component.FlipVertical ? -1 : 1)})";
+
+    private bool IsPortConnected(string componentId, string portId) =>
+        _connections.Any(connection =>
+            (connection.FromComponentId == componentId && connection.FromPortId == portId) ||
+            (connection.ToComponentId == componentId && connection.ToPortId == portId));
+
+    private bool IsPendingPort(string componentId, string portId) =>
+        _pendingPort is { } pending && pending.ComponentId == componentId && pending.PortId == portId;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        _canvasModule = await Js.InvokeAsync<IJSObjectReference>(
+            "import", "./_content/CycleCalculatorUi.Shared/component-canvas.js");
+        _dotNetReference = DotNetObjectReference.Create(this);
+        await _canvasModule.InvokeVoidAsync("attach", _editorRoot, _canvasSurface, _dotNetReference);
+    }
+
+    [JSInvokable]
+    public Task AddComponent(string modelType, double x, double y)
+    {
+        var definition = Components.SingleOrDefault(component => component.ModelType == modelType)
+                         ?? throw new ArgumentException($"Unknown component type: {modelType}", nameof(modelType));
+        var component = new PlacedComponent(
+            Guid.NewGuid().ToString("N"),
+            definition.ModelType,
+            definition.Name,
+            Math.Max(12, Math.Round(x)),
+            Math.Max(12, Math.Round(y)),
+            new ComponentSettings(definition.Name));
+
+        _placedComponents.Add(component);
+        _selectedComponentId = component.Id;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task MoveComponent(string id, double x, double y)
+    {
+        var index = _placedComponents.FindIndex(component => component.Id == id);
+        if (index < 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        _placedComponents[index] = _placedComponents[index] with
+        {
+            X = Math.Max(12, Math.Round(x)),
+            Y = Math.Max(12, Math.Round(y))
+        };
+        _selectedComponentId = id;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task SelectComponent(string id)
+    {
+        if (_placedComponents.All(component => component.Id != id))
+        {
+            return Task.CompletedTask;
+        }
+
+        _selectedComponentId = id;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task SelectPort(string componentId, string portId)
+    {
+        var component = _placedComponents.SingleOrDefault(item => item.Id == componentId)
+                        ?? throw new ArgumentException("The selected component does not exist.", nameof(componentId));
+        var port = GetDefinition(component.ModelType).Ports.SingleOrDefault(item => item.Id == portId)
+                   ?? throw new ArgumentException("The selected component port does not exist.", nameof(portId));
+
+        _selectedComponentId = componentId;
+        _connectionMessage = null;
+
+        if (_pendingPort is null)
+        {
+            if (IsPortConnected(componentId, portId))
+            {
+                _connections.RemoveAll(connection =>
+                    (connection.FromComponentId == componentId && connection.FromPortId == portId) ||
+                    (connection.ToComponentId == componentId && connection.ToPortId == portId));
+                _connectionMessage = $"{port.Label} disconnected.";
+            }
+            else
+            {
+                _pendingPort = new PendingPort(componentId, portId, port.Direction);
+            }
+        }
+        else if (_pendingPort.ComponentId == componentId && _pendingPort.PortId == portId)
+        {
+            _pendingPort = null;
+            _connectionMessage = "Connection cancelled.";
+        }
+        else if (_pendingPort.ComponentId == componentId)
+        {
+            _connectionMessage = "Choose a port on a different component.";
+        }
+        else if (IsPortConnected(componentId, portId))
+        {
+            _connectionMessage = $"{port.Label} is already connected.";
+        }
+        else if (_pendingPort.Direction == port.Direction)
+        {
+            _connectionMessage = "Connect an inlet to an outlet.";
+        }
+        else
+        {
+            _connections.Add(new ComponentConnection(
+                _pendingPort.ComponentId,
+                _pendingPort.PortId,
+                componentId,
+                portId));
+            _pendingPort = null;
+            _connectionMessage = "Ports connected.";
+        }
+
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private void ClearCanvas()
+    {
+        _placedComponents.Clear();
+        _connections.Clear();
+        _pendingPort = null;
+        _connectionMessage = null;
+        _selectedComponentId = null;
+    }
+
+    private void RotateComponent(string id, int degrees)
+    {
+        UpdateComponent(id, component => component with
+        {
+            Rotation = (component.Rotation + degrees + 360) % 360
+        });
+    }
+
+    private void FlipComponent(string id, bool horizontal)
+    {
+        UpdateComponent(id, component => horizontal
+            ? component with { FlipHorizontal = !component.FlipHorizontal }
+            : component with { FlipVertical = !component.FlipVertical });
+    }
+
+    private void UpdateComponent(string id, Func<PlacedComponent, PlacedComponent> update)
+    {
+        var index = _placedComponents.FindIndex(component => component.Id == id);
+        if (index < 0)
+        {
+            return;
+        }
+
+        _placedComponents[index] = update(_placedComponents[index]);
+    }
+
+    private void RemoveComponent(string id)
+    {
+        _placedComponents.RemoveAll(component => component.Id == id);
+        _connections.RemoveAll(connection =>
+            connection.FromComponentId == id || connection.ToComponentId == id);
+        if (_pendingPort?.ComponentId == id)
+        {
+            _pendingPort = null;
+        }
+
+        _selectedComponentId = null;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_canvasModule is not null)
+        {
+            await _canvasModule.InvokeVoidAsync("detach", _editorRoot);
+            await _canvasModule.DisposeAsync();
+        }
+
+        _dotNetReference?.Dispose();
+    }
+
+    private sealed record ComponentDefinition(string ModelType, string Name, string Category, PortDefinition[] Ports);
+
+    private sealed record PlacedComponent(
+        string Id,
+        string ModelType,
+        string Name,
+        double X,
+        double Y,
+        ComponentSettings Settings,
+        int Rotation = 0,
+        bool FlipHorizontal = false,
+        bool FlipVertical = false);
+
+    private sealed class ComponentSettings(string name)
+    {
+        public string Name { get; set; } = name;
+        public string Fluid { get; set; } = CoolPropFluids.R134a;
+        public string Backend { get; set; } = CoolPropBackends.HEOS;
+        public string Fluid2 { get; set; } = CoolPropFluids.R134a;
+        public string Backend2 { get; set; } = CoolPropBackends.HEOS;
+        public string Efficiency { get; set; } = "0.7";
+        public string MassFlow { get; set; } = "0.05";
+        public string DischargePressure { get; set; } = "10";
+        public string OutletPressure { get; set; } = "3";
+        public string OutletTemperature { get; set; } = "10";
+        public string MassFlowUnit { get; set; } = "KilogramsPerSecond";
+        public string PowerUnit { get; set; } = "Kilowatts";
+        public string DischargeVariable { get; set; } = "SaturationTemperature";
+        public string DischargeConditionType { get; set; } = "Pressure";
+        public string DischargeConditionValue { get; set; } = "10";
+        public string MassFlowSuctionSuperheat { get; set; } = "10";
+        public string PowerSuctionSuperheat { get; set; } = "10";
+        public string CurrentSuctionSuperheat { get; set; } = "10";
+        public string MassFlowCoefficients { get; set; } = string.Empty;
+        public string PowerCoefficients { get; set; } = string.Empty;
+        public bool UseCurrentPolynomial { get; set; }
+        public string CurrentCoefficients { get; set; } = string.Empty;
+    }
+
+    private enum PortDirection
+    {
+        Inlet,
+        Outlet
+    }
+
+    private sealed record PortDefinition(
+        string Id,
+        string Label,
+        PortDirection Direction,
+        double X,
+        double Y);
+
+    private sealed record PendingPort(string ComponentId, string PortId, PortDirection Direction);
+
+    private sealed record ComponentConnection(
+        string FromComponentId,
+        string FromPortId,
+        string ToComponentId,
+        string ToPortId);
+
+    private sealed record PortResult(
+        string Label,
+        double MassFlow,
+        double Pressure,
+        double Temperature,
+        double Enthalpy);
+
 }

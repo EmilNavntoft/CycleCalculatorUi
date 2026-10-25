@@ -1,0 +1,72 @@
+<svg class="component-glyph" viewBox="0 0 64 48" role="img" aria-label="@ModelType">
+    <g class="glyph-lines">
+        @if (ModelType.Contains("Compressor", StringComparison.OrdinalIgnoreCase))
+        {
+            <path d="M9 24h7m32 0h7"/>
+            <circle cx="32" cy="24" r="15"/>
+            <path d="m27 17 12 7-12 7z"/>
+            <path class="glyph-accent" d="M21 14h4m14 20h4"/>
+            <path class="glyph-arrow" d="m51 21 5 3-5 3z"/>
+        }
+        else if (ModelType == "HeatExchanger")
+        {
+            <path d="M7 17h7m36 0h7M7 31h7m36 0h7"/>
+            <rect x="14" y="10" width="36" height="28" rx="5"/>
+            <path d="M14 17h4c7 0 7 14 14 14s7-14 14-14h4"/>
+            <path class="glyph-accent" d="M14 31h4c7 0 7-14 14-14s7 14 14 14h4"/>
+            <path class="glyph-arrow" d="m53 14 5 3-5 3zm-42 14 5 3-5 3z"/>
+        }
+        else if (ModelType == "ExpansionValve")
+        {
+            <path d="M6 24h12m28 0h12"/>
+            <path d="m18 14 14 10-14 10zm28 0L32 24l14 10z"/>
+            <path class="glyph-accent" d="M32 14V8m-6 0h12"/>
+            <path class="glyph-arrow" d="m54 21 5 3-5 3z"/>
+        }
+        else if (ModelType == "Receiver")
+        {
+            <path d="M9 24h8m30 0h8"/>
+            <rect x="17" y="8" width="30" height="32" rx="13"/>
+            <path d="M22 15v-5m20 5v-5m-20 28v5m20-5v-5"/>
+            <path d="M32 8V3"/>
+            <path class="glyph-accent" d="M21 24h22"/>
+            <path class="glyph-arrow" d="M15 21l5 3-5 3zm37 0 5 3-5 3zM29 6l3-5 3 5z"/>
+        }
+        else if (ModelType == "Split" || ModelType == "Merge")
+        {
+            @if (ModelType == "Split")
+            {
+                <path d="M7 24h21m0 0 17-13m-17 13 17 13"/>
+                <circle cx="28" cy="24" r="4"/>
+                <path class="glyph-arrow" d="m41 9 5 2-4 4zm0 26 5 2-5 3z"/>
+            }
+            else
+            {
+                <path d="M7 11 24 24m-17 13 17-13m0 0h33"/>
+                <circle cx="24" cy="24" r="4"/>
+                <path class="glyph-arrow" d="m16 17 5 3-5 3zm0 7 5 3-5 3zm38-3 5 3-5 3z"/>
+            }
+
+            <path class="glyph-accent" d="m43 8 3 3-3 3m0 17 3 3-3 3"/>
+        }
+        else if (ModelType == "TemperatureBoundary")
+        {
+            <path d="M6 24h16m20 0h16"/>
+            <circle cx="32" cy="24" r="10"/>
+            <path d="M32 14v10l6 5"/>
+            <path class="glyph-accent" d="M32 7v4"/>
+            <path class="glyph-arrow" d="m54 21 5 3-5 3z"/>
+        }
+        else
+        {
+            <path d="M7 16h11m28 8h11M7 32h11"/>
+            <path d="m18 11 15 13-15 5zm0 10 15 3-15 13zm28-3L33 24l13 3z"/>
+            <path class="glyph-accent" d="M32 24h15"/>
+            <path class="glyph-arrow" d="m53 21 5 3-5 3z"/>
+        }
+    </g>
+</svg>
+
+@code {
+    [Parameter, EditorRequired] public string ModelType { get; set; } = string.Empty;
+}
