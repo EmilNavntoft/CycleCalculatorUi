@@ -16,6 +16,19 @@ else
     /// <summary>True to render a self-contained &lt;svg&gt; (palette, inspector); false inside the canvas.</summary>
     [Parameter] public bool Standalone { get; set; }
 
+    /// <summary>Flow arrowhead with its tip at (x, y), pointing r/l/u/d.</summary>
+    private static string Arrow(int x, int y, char dir, int length = 8)
+    {
+        const int half = 5;
+        return dir switch
+        {
+            'r' => $"M{x - length} {y - half}L{x} {y}L{x - length} {y + half}z",
+            'l' => $"M{x + length} {y - half}L{x} {y}L{x + length} {y + half}z",
+            'u' => $"M{x - half} {y + length}L{x} {y}L{x + half} {y + length}z",
+            _ => $"M{x - half} {y - length}L{x} {y}L{x + half} {y - length}z"
+        };
+    }
+
     private RenderFragment Symbol => __builder =>
     {
         <g class="glyph-lines">
@@ -25,16 +38,19 @@ else
                     <path class="pipe" d="M0 32h30M66 32h30"/>
                     <circle class="body" cx="48" cy="32" r="18"/>
                     <path d="M36 18.5 62 26M36 45.5 62 38"/>
+                    <path class="arrow" d="@(Arrow(19, 32, 'r') + Arrow(85, 32, 'r'))"/>
                     break;
                 case "En12900Compressor":
                     <path class="pipe" d="M0 32h30M66 32h30"/>
                     <circle class="body" cx="48" cy="32" r="18"/>
                     <path d="M36 18.5 62 26M36 45.5 62 38"/>
+                    <path class="arrow" d="@(Arrow(19, 32, 'r') + Arrow(85, 32, 'r'))"/>
                     <path class="accent" d="M44 29h8M44 35h8"/>
                     break;
                 case "ThreeWayValve":
                     <path class="pipe" d="M0 32h30M66 32h30M48 50v14"/>
                     <path class="body" d="M30 20 48 32 30 44zM66 20 48 32 66 44zM36 50 48 32 60 50z"/>
+                    <path class="arrow" d="@(Arrow(19, 32, 'r') + Arrow(85, 32, 'r') + Arrow(48, 58, 'd', 7))"/>
                     <path class="signal-stem" d="M48 32V14M48 0v6"/>
                     <rect class="body" x="40" y="6" width="16" height="8" rx="2"/>
                     break;
@@ -43,6 +59,7 @@ else
                     <path class="body" d="M10 22h20l14 6h16l26-8v24l-26-8H44l-14 6H10z"/>
                     <path class="accent" d="M10 32h24"/>
                     <path class="arrow" d="M32 29l6 3-6 3z"/>
+                    <path class="arrow" d="@(Arrow(36, 48, 'u') + Arrow(84, 32, 'r'))"/>
                     break;
                 case "FixedEfficiencyHeatExchanger":
                 case "FixedUaHeatExchanger":
@@ -60,17 +77,20 @@ else
                     <path class="pipe" d="M0 32h20M76 32h20"/>
                     <rect class="body" x="20" y="8" width="56" height="48" rx="5"/>
                     <path class="pipe" d="M20 32h56"/>
+                    <path class="arrow" d="@Arrow(52, 32, 'r')"/>
                     <path class="accent" d="M28 18c4-4 8 4 12 0s8 4 12 0 8 4 12 0M28 46c4-4 8 4 12 0s8 4 12 0 8 4 12 0"/>
                     break;
                 case "ExpansionValve":
                     <path class="pipe" d="M0 32h30M66 32h30"/>
                     <path class="body" d="M30 20 48 32 30 44zM66 20 48 32 66 44z"/>
+                    <path class="arrow" d="@(Arrow(19, 32, 'r') + Arrow(85, 32, 'r'))"/>
                     <path class="signal-stem" d="M48 32V14M48 0v6"/>
                     <rect class="body" x="40" y="6" width="16" height="8" rx="2"/>
                     break;
                 case "TemperatureBoundary":
                     <path class="pipe" d="M0 32h26M70 32h26"/>
                     <rect class="body" x="26" y="14" width="44" height="36" rx="5"/>
+                    <path class="arrow" d="@(Arrow(17, 32, 'r') + Arrow(87, 32, 'r'))"/>
                     <path class="accent" d="M32 40l5.5-16 5.5 16 5.5-16 5.5 16 5.5-16 5.5 16"/>
                     break;
                 case "BoundaryCondition":
@@ -82,17 +102,20 @@ else
                     <path class="pipe" d="M0 32h96M48 32v32"/>
                     <circle class="accent-fill" cx="48" cy="32" r="6"/>
                     <path class="arrow" d="M80 27l8 5-8 5zM43 50l5 8 5-8z"/>
+                    <path class="arrow" d="@Arrow(24, 32, 'r')"/>
                     break;
                 case "Merge":
                     <path class="pipe" d="M0 32h96M48 32v32"/>
                     <circle class="accent-fill" cx="48" cy="32" r="6"/>
                     <path class="arrow" d="M80 27l8 5-8 5zM43 50l5-8 5 8z"/>
+                    <path class="arrow" d="@Arrow(24, 32, 'r')"/>
                     break;
                 case "Receiver":
                     <path class="pipe" d="M0 32h30M66 16h30M66 48h30"/>
                     <rect class="body" x="30" y="2" width="36" height="60" rx="14"/>
                     <path class="liquid" d="M30.5 40h35v8a13.5 13.5 0 0 1-13.5 13.5h-8A13.5 13.5 0 0 1 30.5 48z"/>
                     <path class="accent" d="M34 40h28"/>
+                    <path class="arrow" d="@(Arrow(19, 32, 'r') + Arrow(85, 16, 'r') + Arrow(85, 48, 'r'))"/>
                     break;
                 default:
                     <path class="pipe" d="M0 32h24M72 32h24"/>
