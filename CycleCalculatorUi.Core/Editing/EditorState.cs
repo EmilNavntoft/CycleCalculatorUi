@@ -214,14 +214,43 @@ public sealed class EditorState(ComponentCatalog catalog, SolveService solver)
     {
         Edit(document =>
         {
+            Dictionary<string, (double Dx, double Dy)> deltas = [];
             foreach ((string id, (double x, double y)) in positions)
             {
                 if (document.FindNode(id) is { } node)
                 {
+                    deltas[id] = (x - node.X, y - node.Y);
                     node.X = x;
                     node.Y = y;
                 }
             }
+
+            // A shaped route between two components that move together moves with them.
+            // When only one end moves, the route keeps its corners and the end segments stretch.
+            foreach (ConnectionModel connection in document.Connections)
+            {
+                if (connection.Points is null ||
+                    !deltas.TryGetValue(connection.From.NodeId, out (double Dx, double Dy) from) ||
+                    !deltas.TryGetValue(connection.To.NodeId, out (double Dx, double Dy) to) ||
+                    from != to)
+                {
+                    continue;
+                }
+
+                connection.Points = connection.Points.Select(p => new CanvasPoint(p.X + from.Dx, p.Y + from.Dy)).ToList();
+            }
+        });
+    }
+
+    /// <summary>Sets the corners of a connection's route; null or empty restores the automatic route.</summary>
+    public void SetConnectionPoints(string connectionId, IReadOnlyList<CanvasPoint>? points)
+    {
+        if (Document.Connections.All(c => c.Id != connectionId))
+            return;
+        Edit(document =>
+        {
+            if (document.Connections.FirstOrDefault(c => c.Id == connectionId) is { } connection)
+                connection.Points = points is { Count: > 0 } ? points.ToList() : null;
         });
     }
 

@@ -30,7 +30,8 @@
                class="connection @(connection.Kind == ConnectionKind.Signal ? "signal" : "fluid") @fluidClass @(State.SelectedConnectionId == connection.Id ? "selected" : "")"
                data-connection-id="@connection.Id"
                data-from="@($"{connection.From.NodeId}|{connection.From.PortKey}")"
-               data-to="@($"{connection.To.NodeId}|{connection.To.PortKey}")">
+               data-to="@($"{connection.To.NodeId}|{connection.To.PortKey}")"
+               data-points="@PointsAttribute(connection)">
                 <path class="hit"/>
                 <path class="line"/>
             </g>
@@ -72,6 +73,9 @@
             </g>
         }
 
+        @* Corner handles of the selected connection, drawn by diagram.js. *@
+        <g data-handles class="route-handles"></g>
+
         @if (ShowValues && result is { Success: true })
         {
             <g class="values @(stale ? "stale" : "")">
@@ -84,6 +88,7 @@
                         continue;
                     }
 
+                    FlowValue flow = FlowDirection.Of(State.Document, State.Catalog, connection.From, value);
                     (Geometry.Point at, Geometry.Point dir) = Geometry.World(node, port);
                     bool vertical = dir.Y != 0;
                     double x = at.X + (vertical ? 8 : dir.X * 10);
@@ -93,7 +98,7 @@
                     <g @key="connection.Id">
                         <text class="value-label" x="@Geometry.F(x)" y="@Geometry.F(y)" text-anchor="@anchor">
                             <tspan x="@Geometry.F(x)">@Format.Pressure(value.Pressure) bar · @Format.Temperature(value.Temperature) °C</tspan>
-                            <tspan x="@Geometry.F(x)" dy="11">@Format.MassFlow(Math.Abs(value.MassFlow)) kg/s</tspan>
+                            <tspan x="@Geometry.F(x)" dy="11" class="@(flow.Reversed ? "reversed" : null)">@Format.MassFlow(flow.MassFlow) kg/s</tspan>
                         </text>
                     </g>
                 }
@@ -160,17 +165,26 @@
         }
     }
 
+    private static string PointsAttribute(ConnectionModel connection) =>
+        connection.Points is null ? "" : string.Join(" ", connection.Points.Select(p => $"{Geometry.F(p.X)},{Geometry.F(p.Y)}"));
+
     private static string FluidClass(string fluid) => "fluid-" + new string(fluid.Where(char.IsLetterOrDigit).ToArray());
 
-    private static string PortTooltip(NodeModel node, PortDescriptor port, SolveResult? result)
+    private string PortTooltip(NodeModel node, PortDescriptor port, SolveResult? result)
     {
         string title = $"{node.Name} · {port.Label}";
         if (port.Kind == PortKind.SignalInput)
             return title + " (signal input: connect to a fluid port to measure it)";
         return result?.Port(node.Id, port.Key) is { } value
-            ? $"{title}\nṁ = {Format.MassFlow(value.MassFlow)} kg/s\np = {Format.Pressure(value.Pressure)} bar\n" +
+            ? $"{title}\n{MassFlowLine(new PortRef(node.Id, port.Key), value)}\np = {Format.Pressure(value.Pressure)} bar\n" +
               $"T = {Format.Temperature(value.Temperature)} °C\nh = {Format.Enthalpy(value.Enthalpy)} kJ/kg"
             : title;
+    }
+
+    private string MassFlowLine(PortRef port, PortResult value)
+    {
+        FlowValue flow = FlowDirection.Of(State.Document, State.Catalog, port, value);
+        return $"ṁ = {Format.MassFlow(flow.MassFlow)} kg/s" + (flow.Reversed ? " (flows against the design direction)" : "");
     }
 
     #region called from diagram.js
@@ -199,6 +213,15 @@
     [JSInvokable]
     public void MoveNodes(NodeMove[] moves) =>
         State.MoveNodes(moves.ToDictionary(move => move.Id, move => (move.X, move.Y)));
+
+    public sealed record RoutePoint(double X, double Y);
+
+    [JSInvokable]
+    public void SetConnectionPoints(string connectionId, RoutePoint[] points)
+    {
+        State.SelectConnection(connectionId);
+        State.SetConnectionPoints(connectionId, points.Select(p => new CanvasPoint(p.X, p.Y)).ToList());
+    }
 
     [JSInvokable]
     public async Task ConnectPorts(string nodeA, string portA, string nodeB, string portB)

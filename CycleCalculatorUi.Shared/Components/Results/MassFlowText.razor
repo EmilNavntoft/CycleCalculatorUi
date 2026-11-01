@@ -1,0 +1,7 @@
+@* A mass flow in the design flow direction; flow running backwards is shown negative and in red. *@
+<span class="mass-flow @(Value.Reversed ? "reversed" : "")"
+      title="@(Value.Reversed ? "Flows against the design direction" : null)">@Format.MassFlow(Value.MassFlow)</span>
+
+@code {
+    [Parameter, EditorRequired] public FlowValue Value { get; set; }
+}

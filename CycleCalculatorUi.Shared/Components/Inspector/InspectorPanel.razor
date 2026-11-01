@@ -101,15 +101,21 @@
         @if (connection.Kind == ConnectionKind.Fluid && State.Result?.Port(connection.From.NodeId, connection.From.PortKey) is { } value)
         {
             <dl class="facts @(State.IsResultStale ? "stale" : "")">
-                <dt>Mass flow</dt><dd>@Format.MassFlow(Math.Abs(value.MassFlow)) kg/s</dd>
+                <dt>Mass flow</dt><dd><MassFlowText Value="FlowDirection.Of(State.Document, State.Catalog, connection.From, value)"/> kg/s</dd>
                 <dt>Pressure</dt><dd>@Format.Pressure(value.Pressure) bar</dd>
                 <dt>Temperature</dt><dd>@Format.Temperature(value.Temperature) °C</dd>
                 <dt>Enthalpy</dt><dd>@Format.Enthalpy(value.Enthalpy) kJ/kg</dd>
             </dl>
         }
         <div class="button-row">
+            @if (connection.Points is not null)
+            {
+                <button type="button" class="ghost" title="Go back to the automatic route"
+                        @onclick="() => State.SetConnectionPoints(connection.Id, null)">Reset route</button>
+            }
             <button type="button" class="ghost danger" @onclick="State.RemoveSelection">Delete connection</button>
         </div>
+        <div class="field-help">Drag a segment or a corner of the line to change its route.</div>
     }
     else
     {
@@ -128,6 +134,7 @@
             <ul>
                 <li>Drag components from the library onto the canvas.</li>
                 <li>Drag from one port to another to connect them, or click both ports.</li>
+                <li>Drag a line or one of its corners to reroute it.</li>
                 <li>Connect a valve's top port to any fluid port to control on its temperature or superheat.</li>
                 <li>Pan with the right or middle mouse button, zoom with the wheel.</li>
                 <li><kbd>R</kbd> rotate, <kbd>F</kbd> flip, <kbd>Del</kbd> delete, <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo.</li>

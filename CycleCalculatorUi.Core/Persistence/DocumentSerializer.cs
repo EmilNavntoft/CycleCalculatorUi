@@ -65,6 +65,9 @@ public static class DocumentSerializer
             node.FlipHorizontal = false;
         }
 
+        foreach (ConnectionModel connection in copy.Connections)
+            connection.Points = null;
+
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(copy, CompactOptions)));
         return Convert.ToHexString(hash, 0, 8);
     }

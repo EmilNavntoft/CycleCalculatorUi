@@ -258,7 +258,12 @@ kbd {
 
 .value-label { fill: var(--text); font-size: 10.5px; font-variant-numeric: tabular-nums; pointer-events: none; paint-order: stroke; stroke: var(--canvas); stroke-width: 3px; stroke-linejoin: round; }
 .values.stale .value-label { fill: var(--muted); font-style: italic; }
+.value-label .reversed { fill: var(--danger); font-weight: 600; }
+.mass-flow.reversed { color: var(--danger); font-weight: 600; }
+.stale .mass-flow.reversed { color: var(--danger); opacity: .7; }
+.values.stale .value-label .reversed { fill: var(--danger); opacity: .7; }
 
+.route-handle { fill: var(--surface, #fff); stroke: var(--accent); stroke-width: 1.5; cursor: move; }
 .rubber-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 6 4; pointer-events: none; }
 .selection-box { fill: var(--accent-soft); fill-opacity: .4; stroke: var(--accent); stroke-dasharray: 4 3; pointer-events: none; }
 

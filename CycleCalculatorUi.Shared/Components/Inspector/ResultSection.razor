@@ -16,7 +16,7 @@
                 }
                 <tr>
                     <td>@port.Label</td>
-                    <td>@Format.MassFlow(value.MassFlow)</td>
+                    <td><MassFlowText Value="FlowDirection.Of(State.Document, State.Catalog, new PortRef(Node.Id, port.Key), value)"/></td>
                     <td>@Format.Pressure(value.Pressure)</td>
                     <td>@Format.Temperature(value.Temperature)</td>
                     <td>@Format.Enthalpy(value.Enthalpy)</td>
@@ -24,7 +24,7 @@
             }
             </tbody>
         </table>
-        <div class="field-help">Mass flow is positive into the component.</div>
+        <div class="field-help">Mass flow is positive in the design flow direction; <span class="mass-flow reversed">red negative</span> values flow backwards.</div>
         @if (result.Outputs.TryGetValue(Node.Id, out var outputs) && outputs.Any(o => o.Value is not null))
         {
             <dl class="facts">

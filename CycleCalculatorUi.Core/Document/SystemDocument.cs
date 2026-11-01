@@ -87,10 +87,18 @@ public sealed class ConnectionModel
 
     public PortRef To { get; set; } = new("", "");
 
+    /// <summary>
+    /// Corners of a route the user has shaped by dragging, in canvas units, between the short stubs that
+    /// leave each port. Null means the route is drawn automatically.
+    /// </summary>
+    public List<CanvasPoint>? Points { get; set; }
+
     public bool Touches(string nodeId) => From.NodeId == nodeId || To.NodeId == nodeId;
 
     public bool Touches(PortRef port) => From == port || To == port;
 }
+
+public sealed record CanvasPoint(double X, double Y);
 
 public sealed record FluidSelection(string Fluid, string Backend);
 

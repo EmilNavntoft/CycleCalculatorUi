@@ -72,7 +72,7 @@
                             <tr class="@(State.SelectedNodeIds.Contains(node.Id) ? "selected" : "")" @onclick="() => State.Select(node.Id)">
                                 <td>@node.Name</td>
                                 <td>@port.Label</td>
-                                <td>@Format.MassFlow(value.MassFlow)</td>
+                                <td><MassFlowText Value="FlowDirection.Of(State.Document, State.Catalog, new PortRef(node.Id, port.Key), value)"/></td>
                                 <td>@Format.Pressure(value.Pressure)</td>
                                 <td>@Format.Temperature(value.Temperature)</td>
                                 <td>@Format.Enthalpy(value.Enthalpy)</td>

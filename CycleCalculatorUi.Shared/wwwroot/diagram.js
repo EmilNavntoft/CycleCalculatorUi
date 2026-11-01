@@ -1,16 +1,18 @@
 // Pointer interaction and connection routing for the cycle diagram.
 // Blazor owns the document and renders nodes, ports and connection elements; this module only
-// handles gestures (drag, connect, pan, zoom, rubber-band) and computes connection path geometry.
+// handles gestures (drag, connect, reroute, pan, zoom, rubber-band) and computes connection path geometry.
 // Changes are reported to .NET once a gesture completes, so dragging stays smooth over a network.
 
 const GRID = 16;
 const STUB = 14;
 const DRAG_THRESHOLD = 4;
+const MAGNET = 6;   // screen pixels within which a dragged segment lines up with a port stub
 
 export function init(svg, dotnet) {
     const viewport = svg.querySelector("[data-viewport]");
     const overlay = svg.querySelector("[data-overlay]");
-    const state = { svg, viewport, overlay, dotnet, view: { x: 40, y: 40, k: 1 }, gesture: null, pending: null };
+    const handles = svg.querySelector("[data-handles]");
+    const state = { svg, viewport, overlay, handles, dotnet, routeOverride: null, view: { x: 40, y: 40, k: 1 }, gesture: null, pending: null };
 
     applyView(state);
 
@@ -50,7 +52,9 @@ export function dispose(state) {
 
 function applyView(state) {
     const { x, y, k } = state.view;
-    state.viewport.setAttribute("transform", `translate(${x} ${y}) scale(${k})`);
+    const transform = `translate(${x} ${y}) scale(${k})`;
+    state.viewport.setAttribute("transform", transform);
+    state.overlay.setAttribute("transform", transform);
     state.svg.style.setProperty("--zoom", k);
 }
 
@@ -184,10 +188,30 @@ function pointerDown(state, event) {
         return;
     }
 
-    const connection = event.target.closest("[data-connection-id]");
+    const handle = event.target.closest("[data-corner]");
+    const connection = handle
+        ? state.viewport.querySelector(`[data-connection-id="${handle.dataset.handleFor}"]`)
+        : event.target.closest("[data-connection-id]");
     if (connection) {
         event.preventDefault();
-        state.dotnet.invokeMethodAsync("SelectConnection", connection.dataset.connectionId);
+        if (!connection.classList.contains("selected")) {
+            state.dotnet.invokeMethodAsync("SelectConnection", connection.dataset.connectionId);
+        }
+        const grab = connection._route && pickRoutePart(state, connection._route.inner, toWorld(state, event.clientX, event.clientY));
+        const corner = handle ? { kind: "corner", index: Number(handle.dataset.corner) } : grab;
+        if (corner) {
+            state.gesture = {
+                kind: "route",
+                part: corner,
+                connection,
+                id: connection.dataset.connectionId,
+                route: connection._route,
+                startAttr: connection.dataset.points ?? "",
+                startX: event.clientX,
+                startY: event.clientY,
+                moved: false
+            };
+        }
         return;
     }
 
@@ -207,7 +231,10 @@ function pointerMove(state, event) {
         movePalette(state, event);
         return;
     }
-    if (!g) return;
+    if (!g) {
+        updateRouteCursor(state, event);
+        return;
+    }
 
     const dx = event.clientX - g.startX, dy = event.clientY - g.startY;
     if (!g.moved && Math.hypot(dx, dy) > DRAG_THRESHOLD) g.moved = true;
@@ -226,6 +253,14 @@ function pointerMove(state, event) {
                 n.newX = x; n.newY = y;
                 n.element.setAttribute("transform", `translate(${x} ${y})`);
             }
+            layout(state);
+            break;
+        }
+        case "route": {
+            if (!g.moved) return;
+            const k = state.view.k;
+            const points = dragRoute(g.route, g.part, dx / k, dy / k, MAGNET / k);
+            state.routeOverride = { id: g.id, points, startAttr: g.startAttr };
             layout(state);
             break;
         }
@@ -257,6 +292,17 @@ function pointerUp(state, event) {
                 if (moves.length) state.dotnet.invokeMethodAsync("MoveNodes", moves);
             }
             break;
+        case "route": {
+            if (!g.moved) break;
+            const override = state.routeOverride;
+            if (!override || override.id !== g.id) break;
+            const inner = g.connection._route?.inner ?? [];
+            // Store what is drawn: the corners between the two port stubs.
+            const points = inner.slice(1, -1).map(p => ({ x: round2(p.x), y: round2(p.y) }));
+            override.points = points;
+            state.dotnet.invokeMethodAsync("SetConnectionPoints", g.id, points);
+            break;
+        }
         case "connect": {
             if (!g.moved) {
                 // Click on a port: start click-to-connect; the next port click completes it.
@@ -399,13 +445,70 @@ export function layout(state) {
     for (const port of state.viewport.querySelectorAll("[data-port-key]")) {
         ports.set(`${port.dataset.portNode}|${port.dataset.portKey}`, port);
     }
+    const override = state.routeOverride;
+    const moving = movingDeltas(state);
+    let selected = null;
     for (const connection of state.viewport.querySelectorAll("[data-connection-id]")) {
         const from = ports.get(connection.dataset.from);
         const to = ports.get(connection.dataset.to);
         if (!from || !to) continue;
-        const d = route(portPoint(state, from), portDirection(state, from), portPoint(state, to), portDirection(state, to));
+
+        let points = parsePoints(connection.dataset.points);
+        if (override && override.id === connection.dataset.connectionId) {
+            // A drag is in progress or waiting for .NET to store it; the override is dropped once the stored route changes.
+            if ((connection.dataset.points ?? "") === override.startAttr) points = override.points;
+            else state.routeOverride = null;
+        }
+        if (points && moving) {
+            // Components moving together carry the route with them, matching EditorState.MoveNodes.
+            const a = moving.get(connection.dataset.from.split("|")[0]);
+            const b = moving.get(connection.dataset.to.split("|")[0]);
+            if (a && b && a.dx === b.dx && a.dy === b.dy) points = points.map(p => ({ x: p.x + a.dx, y: p.y + a.dy }));
+        }
+
+        const r = route(portPoint(state, from), portDirection(state, from), portPoint(state, to), portDirection(state, to), points);
+        connection._route = r;
+        const d = r.full.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
         for (const path of connection.querySelectorAll("path")) path.setAttribute("d", d);
+        if (connection.classList.contains("selected")) selected = connection;
     }
+    drawHandles(state, selected);
+}
+
+/** Corner handles of the selected connection; only corners between the port stubs can be dragged. */
+function drawHandles(state, connection) {
+    if (!state.handles) return;
+    state.handles.replaceChildren();
+    if (!connection?._route) return;
+    const inner = connection._route.inner;
+    for (let i = 1; i < inner.length - 1; i++) {
+        state.handles.appendChild(svgElement("rect", {
+            class: "route-handle",
+            x: inner[i].x - 4, y: inner[i].y - 4, width: 8, height: 8,
+            "data-corner": i,
+            "data-handle-for": connection.dataset.connectionId
+        }));
+    }
+}
+
+/** Per-node offsets of a node drag in progress, keyed by node id. */
+function movingDeltas(state) {
+    const g = state.gesture;
+    if (!g || g.kind !== "move" || !g.moved) return null;
+    const map = new Map();
+    for (const n of g.nodes) {
+        if (n.newX !== undefined) map.set(n.id, { dx: n.newX - n.x, dy: n.newY - n.y });
+    }
+    return map;
+}
+
+function parsePoints(text) {
+    if (!text) return null;
+    const points = text.trim().split(/\s+/).map(pair => {
+        const [x, y] = pair.split(",").map(Number);
+        return { x, y };
+    }).filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
+    return points.length ? points : null;
 }
 
 function portPoint(state, port) {
@@ -423,11 +526,38 @@ function portDirection(state, port) {
     return { x: Math.round(x / length), y: Math.round(y / length) };
 }
 
-/** Orthogonal route with short stubs leaving each port along its outward direction. */
-function route(p1, d1, p2, d2) {
+/**
+ * Orthogonal route with short stubs leaving each port along its outward direction.
+ * Returns the drawn polyline (full) and the part between the stub ends a and b (inner), which is what the user can drag.
+ */
+function route(p1, d1, p2, d2, corners) {
     const a = { x: p1.x + d1.x * STUB, y: p1.y + d1.y * STUB };
     const b = { x: p2.x + d2.x * STUB, y: p2.y + d2.y * STUB };
-    const points = [p1, a];
+    const inner = corners ? throughCorners(a, d1, b, d2, corners) : autoRoute(a, d1, b, d2);
+    return { a, b, d1, d2, inner, full: simplify([p1, ...inner, p2]) };
+}
+
+/**
+ * Route through stored corners. Ends that no longer line up (because a component moved or turned) get an extra
+ * elbow, so the route stays orthogonal and leaves and enters each port along its stub.
+ */
+function throughCorners(a, d1, b, d2, corners) {
+    const out = [a];
+    const targets = [...corners, b];
+    targets.forEach((t, index) => {
+        const prev = out[out.length - 1];
+        if (!aligned(prev, t)) {
+            if (index === targets.length - 1) out.push(d2.x !== 0 ? { x: prev.x, y: b.y } : { x: b.x, y: prev.y });
+            else if (out.length === 1) out.push(d1.x !== 0 ? { x: t.x, y: a.y } : { x: a.x, y: t.y });
+            else out.push({ x: t.x, y: prev.y });
+        }
+        out.push({ x: t.x, y: t.y });
+    });
+    return simplify(out);
+}
+
+function autoRoute(a, d1, b, d2) {
+    const points = [a];
     const horizontal = d1.x !== 0;
     // One corner is enough when both ports face the corner, e.g. an outlet feeding a bottom inlet from below.
     if (d1.x !== 0 && d2.y !== 0 && (b.x - a.x) * d1.x >= 0 && (a.y - b.y) * d2.y >= 0) {
@@ -460,8 +590,91 @@ function route(p1, d1, p2, d2) {
             points.push({ x: mx, y: a.y }, { x: mx, y: b.y });
         }
     }
-    points.push(b, p2);
-    return simplify(points).map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
+    points.push(b);
+    return simplify(points);
+}
+
+// ---------- rerouting by dragging ----------
+
+/** What part of a route is under the pointer: a corner, a segment, or nothing draggable (the port stubs). */
+function pickRoutePart(state, inner, q) {
+    const tolerance = Math.max(6, 8 / state.view.k);
+    for (let i = 1; i < inner.length - 1; i++) {
+        if (Math.hypot(inner[i].x - q.x, inner[i].y - q.y) <= tolerance) return { kind: "corner", index: i };
+    }
+    let best = null;
+    for (let i = 0; i < inner.length - 1; i++) {
+        const distance = segmentDistance(q, inner[i], inner[i + 1]);
+        if (distance <= tolerance && (!best || distance < best.distance)) best = { kind: "segment", index: i, distance };
+    }
+    return best;
+}
+
+/**
+ * Corners of the route after dragging part of it by (dx, dy) in world units.
+ * A segment moves sideways only. A corner moves freely and drags the neighbouring segments along so they stay straight.
+ * The stub ends a and b never move; a segment that starts there gets a new short jog instead.
+ */
+function dragRoute(r, part, dx, dy, magnet) {
+    const pts = r.inner.map(p => ({ x: p.x, y: p.y }));
+    const last = pts.length - 1;
+    const lineUp = (value, axis) => {
+        for (const end of [r.a, r.b]) {
+            if (Math.abs(value - end[axis]) <= magnet) return end[axis];
+        }
+        return Math.round(value / (GRID / 2)) * (GRID / 2);
+    };
+
+    if (part.kind === "segment") {
+        let i = part.index;
+        const horizontal = Math.abs(pts[i].y - pts[i + 1].y) < 0.01;
+        if (i === 0) { pts.unshift({ ...pts[0] }); i++; }
+        if (i + 1 === pts.length - 1) pts.push({ ...pts[pts.length - 1] });
+        if (horizontal) {
+            const y = lineUp(r.inner[part.index].y + dy, "y");
+            pts[i].y = y; pts[i + 1].y = y;
+        } else {
+            const x = lineUp(r.inner[part.index].x + dx, "x");
+            pts[i].x = x; pts[i + 1].x = x;
+        }
+    } else {
+        const i = part.index;
+        const x = lineUp(r.inner[i].x + dx, "x"), y = lineUp(r.inner[i].y + dy, "y");
+        for (const j of [i - 1, i + 1]) {
+            if (j <= 0 || j >= last) continue;
+            if (Math.abs(r.inner[j].y - r.inner[i].y) < 0.01) pts[j].y = y; else pts[j].x = x;
+        }
+        pts[i] = { x, y };
+    }
+    return pts.slice(1, -1);
+}
+
+function updateRouteCursor(state, event) {
+    const connection = event.target.closest?.("[data-connection-id]");
+    if (!connection?._route) return;
+    const part = pickRoutePart(state, connection._route.inner, toWorld(state, event.clientX, event.clientY));
+    let cursor = "pointer";
+    if (part?.kind === "corner") cursor = "move";
+    else if (part?.kind === "segment") {
+        const p = connection._route.inner[part.index], q = connection._route.inner[part.index + 1];
+        cursor = Math.abs(p.y - q.y) < 0.01 ? "ns-resize" : "ew-resize";
+    }
+    connection.style.cursor = cursor;
+}
+
+function segmentDistance(q, p1, p2) {
+    const vx = p2.x - p1.x, vy = p2.y - p1.y;
+    const length2 = vx * vx + vy * vy;
+    const t = length2 ? Math.max(0, Math.min(1, ((q.x - p1.x) * vx + (q.y - p1.y) * vy) / length2)) : 0;
+    return Math.hypot(q.x - (p1.x + t * vx), q.y - (p1.y + t * vy));
+}
+
+function aligned(p, q) {
+    return Math.abs(p.x - q.x) < 0.01 || Math.abs(p.y - q.y) < 0.01;
+}
+
+function round2(value) {
+    return Math.round(value * 100) / 100;
 }
 
 function simplify(points) {

@@ -2,8 +2,10 @@ using CycleCalculator.CycleModel.Fluids;
 using CycleCalculatorUi.Core.Building;
 using CycleCalculatorUi.Core.Catalog;
 using CycleCalculatorUi.Core.Document;
+using CycleCalculatorUi.Core.Editing;
 using CycleCalculatorUi.Core.Examples;
 using CycleCalculatorUi.Core.Persistence;
+using CycleCalculatorUi.Core.Solving;
 using NUnit.Framework;
 
 namespace CycleCalculatorUi.Tests;
@@ -147,9 +149,65 @@ public class DocumentTests
 
         document.Nodes[0].X += 100;
         document.Nodes[0].Rotation = 90;
+        document.Connections[0].Points = [new CanvasPoint(10, 20)];
         Assert.That(DocumentSerializer.Fingerprint(document), Is.EqualTo(original));
 
         document.Nodes[0].Numbers["dischargePressure"] = 95;
         Assert.That(DocumentSerializer.Fingerprint(document), Is.Not.EqualTo(original));
+    }
+
+    [Test]
+    public void ShapedRoutes_MoveWithBothEnds_AndSaveAndUndo()
+    {
+        EditorState state = new(ComponentCatalog.Default, new Core.Solving.SolveService(ComponentCatalog.Default));
+        state.Load(ExampleSystems.Co2WithReceiver());
+        ConnectionModel connection = state.Document.Connections[0];
+        state.SetConnectionPoints(connection.Id, [new CanvasPoint(100, 50), new CanvasPoint(100, 200)]);
+
+        connection = state.Document.Connections[0];
+        Assert.That(connection.Points, Is.EqualTo(new[] { new CanvasPoint(100, 50), new CanvasPoint(100, 200) }));
+        Assert.That(DocumentSerializer.Deserialize(DocumentSerializer.Serialize(state.Document)).Connections[0].Points,
+            Is.EqualTo(connection.Points));
+
+        NodeModel from = state.Document.FindNode(connection.From.NodeId)!;
+        NodeModel to = state.Document.FindNode(connection.To.NodeId)!;
+
+        // Only one end moves: corners stay put.
+        state.MoveNodes(new Dictionary<string, (double, double)> { [from.Id] = (from.X + 32, from.Y) });
+        Assert.That(state.Document.Connections[0].Points![0], Is.EqualTo(new CanvasPoint(100, 50)));
+
+        // Both ends move together: corners move with them.
+        state.MoveNodes(new Dictionary<string, (double, double)>
+        {
+            [from.Id] = (from.X + 16, from.Y + 32),
+            [to.Id] = (to.X + 16, to.Y + 32)
+        });
+        Assert.That(state.Document.Connections[0].Points![0], Is.EqualTo(new CanvasPoint(116, 82)));
+
+        state.SetConnectionPoints(connection.Id, null);
+        Assert.That(state.Document.Connections[0].Points, Is.Null);
+        state.Undo();
+        Assert.That(state.Document.Connections[0].Points, Is.Not.Null);
+    }
+
+    [Test]
+    public void FlowDirection_IsPositiveDownstream_AndFlagsReversedFlow()
+    {
+        SystemDocument document = ExampleSystems.EjectorHeatPump();
+        ComponentCatalog catalog = ComponentCatalog.Default;
+        NodeModel cooler = document.Nodes.Single(n => n.Name == "Gas cooler");
+        NodeModel sinkIn = document.Nodes.Single(n => n.Name == "Water in (sink)");
+        NodeModel sinkOut = document.Nodes.Single(n => n.Name == "Water out (sink)");
+        PortResult into = new(0.5, 1, 1, 1), outOf = new(-0.5, 1, 1, 1);
+
+        // The backend counts flow into a component as positive.
+        Assert.That(FlowDirection.Of(document, catalog, new PortRef(cooler.Id, "Inlet"), into), Is.EqualTo(new FlowValue(0.5, false)));
+        Assert.That(FlowDirection.Of(document, catalog, new PortRef(cooler.Id, "Outlet"), outOf), Is.EqualTo(new FlowValue(0.5, false)));
+        Assert.That(FlowDirection.Of(document, catalog, new PortRef(cooler.Id, "Outlet"), into), Is.EqualTo(new FlowValue(-0.5, true)));
+
+        // Boundary ports take their direction from what they are connected to.
+        Assert.That(FlowDirection.Of(document, catalog, new PortRef(sinkIn.Id, "Port"), outOf), Is.EqualTo(new FlowValue(0.5, false)));
+        Assert.That(FlowDirection.Of(document, catalog, new PortRef(sinkOut.Id, "Port"), into), Is.EqualTo(new FlowValue(0.5, false)));
+        Assert.That(FlowDirection.Of(document, catalog, new PortRef(sinkOut.Id, "Port"), outOf).Reversed, Is.True);
     }
 }

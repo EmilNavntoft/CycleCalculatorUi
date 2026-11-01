@@ -12,7 +12,7 @@ public static class ResultExport
     public static string ToCsv(SystemDocument document, ComponentCatalog catalog, SolveResult result)
     {
         StringBuilder csv = new();
-        csv.AppendLine("Component,Port,Mass flow [kg/s],Pressure [bar],Temperature [°C],Enthalpy [kJ/kg]");
+        csv.AppendLine("Component,Port,Mass flow in design direction [kg/s],Pressure [bar],Temperature [°C],Enthalpy [kJ/kg]");
         foreach (NodeModel node in document.Nodes)
         {
             if (!result.Ports.TryGetValue(node.Id, out var ports) || catalog.Find(node.TypeId) is not { } descriptor)
@@ -22,7 +22,7 @@ public static class ResultExport
                 PortResult value = ports[port.Key];
                 csv.AppendLine(string.Join(',',
                     Quote(node.Name), Quote(port.Label),
-                    Number(value.MassFlow), Number(value.Pressure), Number(value.Temperature), Number(value.Enthalpy)));
+                    Number(FlowDirection.Of(document, catalog, new PortRef(node.Id, port.Key), value).MassFlow), Number(value.Pressure), Number(value.Temperature), Number(value.Enthalpy)));
             }
         }
 
