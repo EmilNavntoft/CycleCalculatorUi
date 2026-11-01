@@ -382,7 +382,7 @@ public static class BuiltInComponents
 
     public static ComponentDescriptor ThreeWayValve()
     {
-        static bool Controlled(NodeModel node) => ChoiceIs(node, "mode", "temperature");
+        static bool Controlled(NodeModel node) => ChoiceIs(node, "mode", "temperature", "massFlow");
 
         return new ComponentDescriptor
         {
@@ -391,7 +391,7 @@ public static class BuiltInComponents
             Category = Categories.Valves,
             NamePrefix = "3WV",
             Description = "Splits the flow between two outlets, either with a fixed opening or adjusted to " +
-                          "reach a temperature measured through the signal input.",
+                          "reach a temperature or mass flow measured through the signal input.",
             Ports =
             [
                 new PortDescriptor("Inlet", "Inlet", PortKind.Fluid, PortDirection.Inlet, 0, 0, 0.5),
@@ -407,7 +407,12 @@ public static class BuiltInComponents
                 new ParameterDescriptor("mode", "Control mode", ParameterKind.Choice)
                 {
                     DefaultChoice = "fixed",
-                    Options = [new ChoiceOption("fixed", "Fixed opening"), new ChoiceOption("temperature", "Temperature setpoint")]
+                    Options =
+                    [
+                        new ChoiceOption("fixed", "Fixed opening"),
+                        new ChoiceOption("temperature", "Temperature setpoint"),
+                        new ChoiceOption("massFlow", "Mass flow setpoint")
+                    ]
                 },
                 new ParameterDescriptor("fixedOpening", "Opening to outlet 1", ParameterKind.Number)
                 {
@@ -416,7 +421,14 @@ public static class BuiltInComponents
                 },
                 new ParameterDescriptor("temperatureSetpoint", "Temperature setpoint", ParameterKind.Number)
                 {
-                    Unit = "°C", DefaultNumber = 30, Min = -273.15, MinExclusive = true, IsActive = Controlled
+                    Unit = "°C", DefaultNumber = 30, Min = -273.15, MinExclusive = true,
+                    IsActive = node => ChoiceIs(node, "mode", "temperature")
+                },
+                new ParameterDescriptor("massFlowSetpoint", "Mass flow setpoint", ParameterKind.Number)
+                {
+                    Unit = "kg/s", DefaultNumber = 0.5, Min = 0,
+                    IsActive = node => ChoiceIs(node, "mode", "massFlow"),
+                    Help = "Mass flow through the measured port, counted in that port's flow direction."
                 },
                 new ParameterDescriptor("minimumOpening", "Minimum opening", ParameterKind.Number)
                 {
@@ -425,13 +437,17 @@ public static class BuiltInComponents
                 }
             ],
             Create = c => new ThreeWayValve(c.Name, c.Fluid(), c.Backend(),
-                c.OptionalNumber("temperatureSetpoint"), c.OptionalNumber("fixedOpening"), c.OptionalNumber("minimumOpening")),
+                temperatureSetpoint: c.OptionalNumber("temperatureSetpoint"),
+                fixedOpening: c.OptionalNumber("fixedOpening"),
+                minimumOpening: c.OptionalNumber("minimumOpening"),
+                massFlowSetpoint: c.OptionalNumber("massFlowSetpoint")),
             GetPort = Typed.Ports<ThreeWayValve>(("Inlet", v => v.Inlet), ("Outlet", v => v.Outlet), ("Outlet2", v => v.Outlet2)),
             GetSignalPort = Typed.SignalPorts<ThreeWayValve>(("Signal", v => v.SignalPort)),
             ReadOutputs = Typed.Outputs<ThreeWayValve>(v =>
             [
                 new OutputValue("Opening to outlet 1", v.Opening, "-"),
-                new OutputValue("Temperature error", v.TemperatureError, "K")
+                new OutputValue("Temperature error", v.TemperatureError, "K"),
+                new OutputValue("Mass flow error", v.MassFlowError, "kg/s")
             ])
         };
     }

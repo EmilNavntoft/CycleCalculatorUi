@@ -113,6 +113,38 @@ public class SolveTests
         Assert.That(result.Message, Is.Not.Empty);
     }
 
+    [Test]
+    public async Task ThreeWayValve_MassFlowSetpoint_SplitsFlowToMeetIt()
+    {
+        // Same system as ThreeWayValveTests.GivenMassFlowSetpoint_ValveSplitsFlowToMeetItOrSaturates in the backend.
+        DocumentBuilder builder = new(ComponentCatalog.Default, "Mass flow valve",
+            new FluidSelection(CoolPropFluids.CarbonDioxide, CoolPropBackends.HEOS));
+        NodeModel comp = builder.Add("SimpleCompressor", "Compressor", 0, 0,
+            ("isentropicEfficiency", 1), ("dischargePressure", 20), ("massFlow", 1));
+        NodeModel valve = builder.Add("ThreeWayValve", "Valve", 100, 0, ("massFlowSetpoint", 0.3));
+        NodeModel warm = builder.Add("TemperatureBoundary", "Warm branch", 200, 0, ("outletTemperature", 40));
+        NodeModel cool = builder.Add("TemperatureBoundary", "Cool branch", 200, 100, ("outletTemperature", 10));
+        NodeModel merge = builder.Add("Merge", "Merge", 300, 0);
+        SystemDocument document = builder
+            .Choice(valve, "mode", "massFlow")
+            .Connect(comp, "Outlet", valve, "Inlet")
+            .Connect(valve, "Outlet", warm, "Inlet")
+            .Connect(valve, "Outlet2", cool, "Inlet")
+            .Connect(warm, "Outlet", merge, "Inlet")
+            .Connect(cool, "Outlet", merge, "Inlet2")
+            .Connect(merge, "Outlet", comp, "Inlet")
+            .Connect(warm, "Inlet", valve, "Signal", ConnectionKind.Signal)
+            .Build();
+
+        SolveResult result = await _service.SolveAsync(document);
+
+        Assert.That(result.Success, Is.True, result.Message);
+        IReadOnlyList<OutputValue> outputs = result.Outputs[valve.Id];
+        Assert.That(outputs.Single(o => o.Label == "Opening to outlet 1").Value, Is.EqualTo(0.3).Within(1e-6));
+        Assert.That(outputs.Single(o => o.Label == "Mass flow error").Value, Is.EqualTo(0).Within(1e-6));
+        Assert.That(outputs.Single(o => o.Label == "Temperature error").Value, Is.Null);
+    }
+
     private static string NodeId(SystemDocument document, string name) => document.Nodes.Single(n => n.Name == name).Id;
 
     private static PortResult Port(SystemDocument document, SolveResult result, string node, string port) =>
