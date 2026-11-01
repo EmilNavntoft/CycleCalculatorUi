@@ -1,0 +1,169 @@
+using System.Diagnostics;
+using CycleCalculator.CycleModel.Model.BaseComponents;
+using CycleCalculator.CycleModel.Model.Connectors;
+using CycleCalculator.CycleModel.Solver;
+using CycleCalculatorUi.Core.Building;
+using CycleCalculatorUi.Core.Catalog;
+using CycleCalculatorUi.Core.Document;
+using CycleCalculatorUi.Core.Persistence;
+
+namespace CycleCalculatorUi.Core.Solving;
+
+/// <summary>Solved state of one port, in backend units.</summary>
+public sealed record PortResult(double MassFlow, double Pressure, double Temperature, double Enthalpy);
+
+public sealed class SolveResult
+{
+    public required bool Success { get; init; }
+
+    public required string Message { get; init; }
+
+    public TimeSpan Duration { get; init; }
+
+    public IReadOnlyList<ValidationIssue> Issues { get; init; } = [];
+
+    /// <summary>Node id → port key → result.</summary>
+    public IReadOnlyDictionary<string, IReadOnlyDictionary<string, PortResult>> Ports { get; init; } =
+        new Dictionary<string, IReadOnlyDictionary<string, PortResult>>();
+
+    /// <summary>Node id → component outputs such as a valve's outlet pressure.</summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<OutputValue>> Outputs { get; init; } =
+        new Dictionary<string, IReadOnlyList<OutputValue>>();
+
+    /// <summary>Fingerprint of the document that was solved; compare to detect stale results.</summary>
+    public string Fingerprint { get; init; } = "";
+
+    public PortResult? Port(string nodeId, string portKey) =>
+        Ports.TryGetValue(nodeId, out var ports) ? ports.GetValueOrDefault(portKey) : null;
+}
+
+public sealed class SolveOptions
+{
+    /// <summary>Stop waiting for the solver after this time. The backend cannot be interrupted, so the
+    /// abandoned solve still finishes in the background but its result is discarded.</summary>
+    public TimeSpan Timeout { get; init; } = TimeSpan.FromSeconds(60);
+
+    /// <summary>Maximum number of solves running at once (protects a shared web server).</summary>
+    public int MaxConcurrentSolves { get; init; } = Math.Max(1, Environment.ProcessorCount / 2);
+}
+
+/// <summary>Builds and solves documents on a background thread.</summary>
+public sealed class SolveService
+{
+    private readonly ComponentCatalog _catalog;
+    private readonly ModelBuilder _builder;
+    private readonly SolveOptions _options;
+    private readonly SemaphoreSlim _slots;
+
+    public SolveService(ComponentCatalog catalog, SolveOptions? options = null)
+    {
+        _catalog = catalog;
+        _builder = new ModelBuilder(catalog);
+        _options = options ?? new SolveOptions();
+        _slots = new SemaphoreSlim(_options.MaxConcurrentSolves);
+    }
+
+    public async Task<SolveResult> SolveAsync(SystemDocument document, CancellationToken cancellationToken = default)
+    {
+        // Work on a copy so edits made while solving cannot affect this solve.
+        SystemDocument snapshot = DocumentSerializer.Clone(document);
+        string fingerprint = DocumentSerializer.Fingerprint(snapshot);
+        Stopwatch stopwatch = Stopwatch.StartNew();
+
+        BuildResult build = _builder.Build(snapshot);
+        if (!build.Success)
+        {
+            return new SolveResult
+            {
+                Success = false,
+                Message = build.Issues.FirstOrDefault(i => i.Severity == IssueSeverity.Error)?.Message
+                          ?? "The system could not be built.",
+                Issues = build.Issues,
+                Fingerprint = fingerprint,
+                Duration = stopwatch.Elapsed
+            };
+        }
+
+        await _slots.WaitAsync(cancellationToken);
+        // Free the slot when the solver really finishes, even if we stopped waiting for it earlier.
+        Task solve = Task.Run(() => Orchestrator.Solve(build.Components), CancellationToken.None);
+        _ = solve.ContinueWith(_ => _slots.Release(), TaskScheduler.Default);
+        try
+        {
+            await solve.WaitAsync(_options.Timeout, cancellationToken);
+        }
+        catch (TimeoutException)
+        {
+            return Failure($"The solver did not finish within {_options.Timeout.TotalSeconds:0} s.");
+        }
+        catch (OperationCanceledException)
+        {
+            return Failure("The calculation was cancelled.");
+        }
+        catch (Exception ex)
+        {
+            return Failure(ex.Message);
+        }
+
+        return new SolveResult
+        {
+            Success = true,
+            Message = $"Solved in {stopwatch.Elapsed.TotalSeconds:0.00} s.",
+            Duration = stopwatch.Elapsed,
+            Issues = build.Issues,
+            Ports = ReadPorts(snapshot, build),
+            Outputs = ReadOutputs(snapshot, build),
+            Fingerprint = fingerprint
+        };
+
+        SolveResult Failure(string message) => new()
+        {
+            Success = false,
+            Message = message,
+            Issues = build.Issues,
+            Fingerprint = fingerprint,
+            Duration = stopwatch.Elapsed
+        };
+    }
+
+    private Dictionary<string, IReadOnlyDictionary<string, PortResult>> ReadPorts(SystemDocument document, BuildResult build)
+    {
+        Dictionary<string, IReadOnlyDictionary<string, PortResult>> results = [];
+        foreach (NodeModel node in document.Nodes)
+        {
+            ComponentDescriptor descriptor = _catalog.Get(node.TypeId);
+            CycleComponent component = build.ComponentsByNode[node.Id];
+            Dictionary<string, PortResult> ports = [];
+            foreach (PortDescriptor port in descriptor.Ports.Where(p => p.Kind == PortKind.Fluid))
+            {
+                Port solved = descriptor.GetPort(component, port.Key);
+                ports[port.Key] = new PortResult(solved.MassFlow, solved.Pressure, solved.Temperature, solved.Enthalpy);
+            }
+
+            results[node.Id] = ports;
+        }
+
+        return results;
+    }
+
+    private Dictionary<string, IReadOnlyList<OutputValue>> ReadOutputs(SystemDocument document, BuildResult build)
+    {
+        Dictionary<string, IReadOnlyList<OutputValue>> results = [];
+        foreach (NodeModel node in document.Nodes)
+        {
+            ComponentDescriptor descriptor = _catalog.Get(node.TypeId);
+            if (descriptor.ReadOutputs is not { } read)
+                continue;
+            try
+            {
+                results[node.Id] = read(build.ComponentsByNode[node.Id]).ToList();
+            }
+            catch (Exception)
+            {
+                // Outputs are extra information; a component that cannot report them should not fail the solve.
+            }
+        }
+
+        return results;
+    }
+}

@@ -1,0 +1,48 @@
+@* Draggable component library. diagram.js picks up items by their data-palette-type attribute. *@
+<aside class="panel palette">
+    <div class="panel-header">
+        <h2>Components</h2>
+    </div>
+    <label class="search">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 4 4"/></svg>
+        <input @bind="_search" @bind:event="oninput" placeholder="Search" aria-label="Search components"/>
+    </label>
+    <div class="palette-groups">
+        @foreach (IGrouping<string, ComponentDescriptor> group in Groups)
+        {
+            <section>
+                <h3>@group.Key</h3>
+                @foreach (ComponentDescriptor descriptor in group)
+                {
+                    <div class="palette-item" data-palette-type="@descriptor.TypeId" title="@descriptor.Description"
+                         role="button" tabindex="0" aria-label="Add @descriptor.DisplayName">
+                        <ComponentGlyph TypeId="@descriptor.TypeId" Standalone="true"/>
+                        <span>@descriptor.DisplayName</span>
+                    </div>
+                }
+            </section>
+        }
+        @if (!Groups.Any())
+        {
+            <p class="muted">No components match “@_search”.</p>
+        }
+    </div>
+    <p class="palette-hint">Drag onto the canvas, or click to add in the middle.</p>
+</aside>
+
+@code {
+    [Parameter, EditorRequired] public ComponentCatalog Catalog { get; set; } = null!;
+
+    private static readonly string[] CategoryOrder =
+        [Categories.Boundaries, Categories.Compressors, Categories.Valves, Categories.HeatExchangers, Categories.Flow];
+
+    private string _search = "";
+
+    private IEnumerable<IGrouping<string, ComponentDescriptor>> Groups => Catalog.All
+        .Where(d => string.IsNullOrWhiteSpace(_search) ||
+                    d.DisplayName.Contains(_search, StringComparison.OrdinalIgnoreCase) ||
+                    d.Category.Contains(_search, StringComparison.OrdinalIgnoreCase))
+        .OrderBy(d => d.DisplayName)
+        .GroupBy(d => d.Category)
+        .OrderBy(g => Array.IndexOf(CategoryOrder, g.Key) is var i and >= 0 ? i : int.MaxValue);
+}

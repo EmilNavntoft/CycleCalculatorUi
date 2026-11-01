@@ -1,0 +1,128 @@
+@* Problems list and a table of all calculated port states. *@
+<section class="bottom-panel @(_open ? "open" : "")">
+    <div class="tabs" role="tablist">
+        <button type="button" role="tab" class="@(_tab == Tab.Problems && _open ? "active" : "")" @onclick="() => Toggle(Tab.Problems)">
+            Problems
+            @if (Errors > 0)
+            {
+                <span class="count error">@Errors</span>
+            }
+            else if (Warnings > 0)
+            {
+                <span class="count">@Warnings</span>
+            }
+        </button>
+        <button type="button" role="tab" class="@(_tab == Tab.Results && _open ? "active" : "")" @onclick="() => Toggle(Tab.Results)">
+            Results
+        </button>
+        <span class="spacer"></span>
+        <button type="button" class="icon" aria-label="@(_open ? "Collapse" : "Expand")" @onclick="() => _open = !_open">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="@(_open ? "M4 6l4 4 4-4" : "M4 10l4-4 4 4")"/></svg>
+        </button>
+    </div>
+    @if (_open)
+    {
+        <div class="tab-body">
+            @if (_tab == Tab.Problems)
+            {
+                @if (SolverFailure is { } failure)
+                {
+                    <ul class="problem-list">
+                        <li class="error">Calculation failed: @failure</li>
+                    </ul>
+                }
+                @if (Issues.Count == 0 && SolverFailure is null)
+                {
+                    <p class="muted">No problems found.</p>
+                }
+                else if (Issues.Count > 0)
+                {
+                    <ul class="problem-list">
+                        @foreach (ValidationIssue issue in Issues.OrderByDescending(i => i.Severity))
+                        {
+                            <li class="@issue.Severity.ToString().ToLowerInvariant()">
+                                <button type="button" class="link" disabled="@(issue.NodeId is null)" @onclick="() => State.Select(issue.NodeId)">
+                                    @issue.Message
+                                </button>
+                            </li>
+                        }
+                    </ul>
+                }
+            }
+            else if (State.Result is not { Success: true } result)
+            {
+                <p class="muted">@(State.Result?.Message ?? "Press Calculate to solve the system.")</p>
+            }
+            else
+            {
+                <table class="result-table wide @(State.IsResultStale ? "stale" : "")">
+                    <thead>
+                    <tr><th>Component</th><th>Port</th><th>ṁ<small>kg/s</small></th><th>p<small>bar</small></th><th>T<small>°C</small></th><th>h<small>kJ/kg</small></th></tr>
+                    </thead>
+                    <tbody>
+                    @foreach (NodeModel node in State.Document.Nodes)
+                    {
+                        if (!result.Ports.TryGetValue(node.Id, out var ports) || State.Catalog.Find(node.TypeId) is not { } descriptor)
+                        {
+                            continue;
+                        }
+                        foreach (PortDescriptor port in descriptor.Ports.Where(p => ports.ContainsKey(p.Key)))
+                        {
+                            PortResult value = ports[port.Key];
+                            <tr class="@(State.SelectedNodeIds.Contains(node.Id) ? "selected" : "")" @onclick="() => State.Select(node.Id)">
+                                <td>@node.Name</td>
+                                <td>@port.Label</td>
+                                <td>@Format.MassFlow(value.MassFlow)</td>
+                                <td>@Format.Pressure(value.Pressure)</td>
+                                <td>@Format.Temperature(value.Temperature)</td>
+                                <td>@Format.Enthalpy(value.Enthalpy)</td>
+                            </tr>
+                        }
+                    }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    private enum Tab
+    {
+        Problems,
+        Results
+    }
+
+    [Parameter, EditorRequired] public EditorState State { get; set; } = null!;
+
+    private Tab _tab = Tab.Problems;
+    private bool _open;
+
+    /// <summary>Issues of the current document. An empty canvas is not reported as a problem.</summary>
+    private IReadOnlyList<ValidationIssue> Issues => State.Document.Nodes.Count == 0 ? [] : State.Issues;
+
+    private int Errors => Issues.Count(i => i.Severity == IssueSeverity.Error) + (SolverFailure is null ? 0 : 1);
+
+    private int Warnings => Issues.Count(i => i.Severity == IssueSeverity.Warning);
+
+    /// <summary>The solver's message when the last calculation failed for a reason other than validation.</summary>
+    private string? SolverFailure =>
+        State.Result is { Success: false } result && !State.IsResultStale &&
+        result.Issues.All(i => i.Severity != IssueSeverity.Error)
+            ? result.Message
+            : null;
+
+    /// <summary>Opens the given tab, e.g. after a calculation.</summary>
+    public void Show(bool results)
+    {
+        _tab = results ? Tab.Results : Tab.Problems;
+        _open = true;
+        StateHasChanged();
+    }
+
+    private void Toggle(Tab tab)
+    {
+        _open = !_open || _tab != tab;
+        _tab = tab;
+    }
+}

@@ -1,72 +1,104 @@
-<svg class="component-glyph" viewBox="0 0 64 48" role="img" aria-label="@ModelType">
-    <g class="glyph-lines">
-        @if (ModelType.Contains("Compressor", StringComparison.OrdinalIgnoreCase))
-        {
-            <path d="M9 24h7m32 0h7"/>
-            <circle cx="32" cy="24" r="15"/>
-            <path d="m27 17 12 7-12 7z"/>
-            <path class="glyph-accent" d="M21 14h4m14 20h4"/>
-            <path class="glyph-arrow" d="m51 21 5 3-5 3z"/>
-        }
-        else if (ModelType == "HeatExchanger")
-        {
-            <path d="M7 17h7m36 0h7M7 31h7m36 0h7"/>
-            <rect x="14" y="10" width="36" height="28" rx="5"/>
-            <path d="M14 17h4c7 0 7 14 14 14s7-14 14-14h4"/>
-            <path class="glyph-accent" d="M14 31h4c7 0 7-14 14-14s7 14 14 14h4"/>
-            <path class="glyph-arrow" d="m53 14 5 3-5 3zm-42 14 5 3-5 3z"/>
-        }
-        else if (ModelType == "ExpansionValve")
-        {
-            <path d="M6 24h12m28 0h12"/>
-            <path d="m18 14 14 10-14 10zm28 0L32 24l14 10z"/>
-            <path class="glyph-accent" d="M32 14V8m-6 0h12"/>
-            <path class="glyph-arrow" d="m54 21 5 3-5 3z"/>
-        }
-        else if (ModelType == "Receiver")
-        {
-            <path d="M9 24h8m30 0h8"/>
-            <rect x="17" y="8" width="30" height="32" rx="13"/>
-            <path d="M22 15v-5m20 5v-5m-20 28v5m20-5v-5"/>
-            <path d="M32 8V3"/>
-            <path class="glyph-accent" d="M21 24h22"/>
-            <path class="glyph-arrow" d="M15 21l5 3-5 3zm37 0 5 3-5 3zM29 6l3-5 3 5z"/>
-        }
-        else if (ModelType == "Split" || ModelType == "Merge")
-        {
-            @if (ModelType == "Split")
-            {
-                <path d="M7 24h21m0 0 17-13m-17 13 17 13"/>
-                <circle cx="28" cy="24" r="4"/>
-                <path class="glyph-arrow" d="m41 9 5 2-4 4zm0 26 5 2-5 3z"/>
-            }
-            else
-            {
-                <path d="M7 11 24 24m-17 13 17-13m0 0h33"/>
-                <circle cx="24" cy="24" r="4"/>
-                <path class="glyph-arrow" d="m16 17 5 3-5 3zm0 7 5 3-5 3zm38-3 5 3-5 3z"/>
-            }
-
-            <path class="glyph-accent" d="m43 8 3 3-3 3m0 17 3 3-3 3"/>
-        }
-        else if (ModelType == "TemperatureBoundary")
-        {
-            <path d="M6 24h16m20 0h16"/>
-            <circle cx="32" cy="24" r="10"/>
-            <path d="M32 14v10l6 5"/>
-            <path class="glyph-accent" d="M32 7v4"/>
-            <path class="glyph-arrow" d="m54 21 5 3-5 3z"/>
-        }
-        else
-        {
-            <path d="M7 16h11m28 8h11M7 32h11"/>
-            <path d="m18 11 15 13-15 5zm0 10 15 3-15 13zm28-3L33 24l13 3z"/>
-            <path class="glyph-accent" d="M32 24h15"/>
-            <path class="glyph-arrow" d="m53 21 5 3-5 3z"/>
-        }
-    </g>
-</svg>
+@* Component symbols on a 96×64 grid. Pipe stubs end exactly at the port anchors in BuiltInComponents. *@
+@if (Standalone)
+{
+    <svg class="glyph" viewBox="-4 -4 104 72" aria-hidden="true">
+        @Symbol
+    </svg>
+}
+else
+{
+    @Symbol
+}
 
 @code {
-    [Parameter, EditorRequired] public string ModelType { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string TypeId { get; set; } = "";
+
+    /// <summary>True to render a self-contained &lt;svg&gt; (palette, inspector); false inside the canvas.</summary>
+    [Parameter] public bool Standalone { get; set; }
+
+    private RenderFragment Symbol => __builder =>
+    {
+        <g class="glyph-lines">
+            @switch (TypeId)
+            {
+                case "SimpleCompressor":
+                    <path class="pipe" d="M0 32h30M66 32h30"/>
+                    <circle class="body" cx="48" cy="32" r="18"/>
+                    <path d="M36 18.5 62 26M36 45.5 62 38"/>
+                    break;
+                case "En12900Compressor":
+                    <path class="pipe" d="M0 32h30M66 32h30"/>
+                    <circle class="body" cx="48" cy="32" r="18"/>
+                    <path d="M36 18.5 62 26M36 45.5 62 38"/>
+                    <path class="accent" d="M44 29h8M44 35h8"/>
+                    break;
+                case "ThreeWayValve":
+                    <path class="pipe" d="M0 32h30M66 32h30M48 50v14"/>
+                    <path class="body" d="M30 20 48 32 30 44zM66 20 48 32 66 44zM36 50 48 32 60 50z"/>
+                    <path class="signal-stem" d="M48 32V14M48 0v6"/>
+                    <rect class="body" x="40" y="6" width="16" height="8" rx="2"/>
+                    break;
+                case "FixedEfficiencyEjector":
+                    <path class="pipe" d="M0 32h10M86 32h10M36 64V40"/>
+                    <path class="body" d="M10 22h20l14 6h16l26-8v24l-26-8H44l-14 6H10z"/>
+                    <path class="accent" d="M10 32h24"/>
+                    <path class="arrow" d="M32 29l6 3-6 3z"/>
+                    break;
+                case "FixedEfficiencyHeatExchanger":
+                case "FixedUaHeatExchanger":
+                    <rect class="body" x="16" y="4" width="64" height="56" rx="5"/>
+                    <path class="pipe" d="M0 16h96"/>
+                    <path class="pipe accent" d="M0 48h96"/>
+                    <path class="arrow" d="M44 12l7 4-7 4z"/>
+                    <path class="arrow accent-fill" d="M52 44l-7 4 7 4z"/>
+                    @if (TypeId == "FixedEfficiencyHeatExchanger")
+                    {
+                        <path class="signal-stem" d="M48 0v4"/>
+                    }
+                    break;
+                case "FixedUaEvaporator":
+                    <path class="pipe" d="M0 32h20M76 32h20"/>
+                    <rect class="body" x="20" y="8" width="56" height="48" rx="5"/>
+                    <path class="pipe" d="M20 32h56"/>
+                    <path class="accent" d="M28 18c4-4 8 4 12 0s8 4 12 0 8 4 12 0M28 46c4-4 8 4 12 0s8 4 12 0 8 4 12 0"/>
+                    break;
+                case "ExpansionValve":
+                    <path class="pipe" d="M0 32h30M66 32h30"/>
+                    <path class="body" d="M30 20 48 32 30 44zM66 20 48 32 66 44z"/>
+                    <path class="signal-stem" d="M48 32V14M48 0v6"/>
+                    <rect class="body" x="40" y="6" width="16" height="8" rx="2"/>
+                    break;
+                case "TemperatureBoundary":
+                    <path class="pipe" d="M0 32h26M70 32h26"/>
+                    <rect class="body" x="26" y="14" width="44" height="36" rx="5"/>
+                    <path class="accent" d="M32 40l5.5-16 5.5 16 5.5-16 5.5 16 5.5-16 5.5 16"/>
+                    break;
+                case "BoundaryCondition":
+                    <path class="pipe" d="M62 32h34"/>
+                    <circle class="body" cx="44" cy="32" r="18"/>
+                    <circle class="accent-fill" cx="44" cy="32" r="6"/>
+                    break;
+                case "Split":
+                    <path class="pipe" d="M0 32h96M48 32v32"/>
+                    <circle class="accent-fill" cx="48" cy="32" r="6"/>
+                    <path class="arrow" d="M80 27l8 5-8 5zM43 50l5 8 5-8z"/>
+                    break;
+                case "Merge":
+                    <path class="pipe" d="M0 32h96M48 32v32"/>
+                    <circle class="accent-fill" cx="48" cy="32" r="6"/>
+                    <path class="arrow" d="M80 27l8 5-8 5zM43 50l5-8 5 8z"/>
+                    break;
+                case "Receiver":
+                    <path class="pipe" d="M0 32h30M66 16h30M66 48h30"/>
+                    <rect class="body" x="30" y="2" width="36" height="60" rx="14"/>
+                    <path class="liquid" d="M30.5 40h35v8a13.5 13.5 0 0 1-13.5 13.5h-8A13.5 13.5 0 0 1 30.5 48z"/>
+                    <path class="accent" d="M34 40h28"/>
+                    break;
+                default:
+                    <path class="pipe" d="M0 32h24M72 32h24"/>
+                    <rect class="body" x="24" y="12" width="48" height="40" rx="6"/>
+                    break;
+            }
+        </g>
+    };
 }

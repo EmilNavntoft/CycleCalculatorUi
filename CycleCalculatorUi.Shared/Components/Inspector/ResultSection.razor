@@ -1,0 +1,45 @@
+@* Calculated port states and component outputs of one node. *@
+@if (State.Result is { Success: true } result && result.Ports.TryGetValue(Node.Id, out var ports))
+{
+    <section class="inspector-section results @(State.IsResultStale ? "stale" : "")">
+        <h3>Results @if (State.IsResultStale) { <span class="badge">out of date</span> }</h3>
+        <table class="result-table">
+            <thead>
+            <tr><th>Port</th><th>ṁ<small>kg/s</small></th><th>p<small>bar</small></th><th>T<small>°C</small></th><th>h<small>kJ/kg</small></th></tr>
+            </thead>
+            <tbody>
+            @foreach (PortDescriptor port in Descriptor.Ports.Where(p => p.Kind == PortKind.Fluid))
+            {
+                if (!ports.TryGetValue(port.Key, out PortResult? value))
+                {
+                    continue;
+                }
+                <tr>
+                    <td>@port.Label</td>
+                    <td>@Format.MassFlow(value.MassFlow)</td>
+                    <td>@Format.Pressure(value.Pressure)</td>
+                    <td>@Format.Temperature(value.Temperature)</td>
+                    <td>@Format.Enthalpy(value.Enthalpy)</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+        <div class="field-help">Mass flow is positive into the component.</div>
+        @if (result.Outputs.TryGetValue(Node.Id, out var outputs) && outputs.Any(o => o.Value is not null))
+        {
+            <dl class="facts">
+                @foreach (OutputValue output in outputs.Where(o => o.Value is not null))
+                {
+                    <dt>@output.Label</dt>
+                    <dd>@Format.Number(output.Value, 5) @output.Unit</dd>
+                }
+            </dl>
+        }
+    </section>
+}
+
+@code {
+    [Parameter, EditorRequired] public EditorState State { get; set; } = null!;
+    [Parameter, EditorRequired] public NodeModel Node { get; set; } = null!;
+    [Parameter, EditorRequired] public ComponentDescriptor Descriptor { get; set; } = null!;
+}

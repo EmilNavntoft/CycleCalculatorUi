@@ -1,6 +1,5 @@
 using CycleCalculatorUi.Web.Components;
-using CycleCalculatorUi.Shared.Services;
-using CycleCalculatorUi.Web.Services;
+using CycleCalculatorUi.Shared;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -8,8 +7,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
-// Add device-specific services used by the CycleCalculatorUi.Shared project
-builder.Services.AddSingleton<IFormFactor, FormFactor>();
+// Editor services shared with the desktop host.
+builder.Services.AddCycleEditor();
 
 var app = builder.Build();
 

@@ -1,0 +1,80 @@
+@* Numeric input with unit. Commits on change (blur or Enter); an empty optional field means "free". *@
+<div class="field @(Error is not null || _invalid ? "invalid" : "")">
+    <label for="@_id">@Label</label>
+    <div class="input-with-unit">
+        <input id="@_id" type="text" inputmode="decimal" autocomplete="off" spellcheck="false"
+               value="@_text" placeholder="@(Optional ? "free" : "")"
+               @onchange="OnChange"/>
+        @if (!string.IsNullOrEmpty(Unit))
+        {
+            <span class="unit">@Unit</span>
+        }
+    </div>
+    @if (_invalid)
+    {
+        <div class="field-message">Enter a number@(Optional ? ", or leave empty to let the solver decide" : "").</div>
+    }
+    else if (Error is not null)
+    {
+        <div class="field-message">@Error</div>
+    }
+    else if (Help is not null)
+    {
+        <div class="field-help">@Help</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter] public double? Value { get; set; }
+    [Parameter] public string? Unit { get; set; }
+    [Parameter] public bool Optional { get; set; }
+    [Parameter] public string? Help { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public EventCallback<double?> ValueChanged { get; set; }
+
+    private readonly string _id = "f" + Guid.NewGuid().ToString("N")[..8];
+    private string _text = "";
+    private double? _shown;
+    private bool _invalid;
+
+    protected override void OnParametersSet()
+    {
+        // Only overwrite the text when the value changed elsewhere (e.g. undo), so an invalid entry stays visible.
+        if (_shown != Value || _text.Length == 0 && Value is not null)
+        {
+            _shown = Value;
+            _text = Value is null ? "" : Format.Number(Value);
+            _invalid = false;
+        }
+    }
+
+    private async Task OnChange(ChangeEventArgs e)
+    {
+        _text = e.Value?.ToString() ?? "";
+        if (string.IsNullOrWhiteSpace(_text))
+        {
+            _invalid = !Optional;
+            if (Optional)
+                await Commit(null);
+            return;
+        }
+
+        if (!Format.TryParse(_text, out double value))
+        {
+            _invalid = true;
+            return;
+        }
+
+        _invalid = false;
+        await Commit(value);
+    }
+
+    private async Task Commit(double? value)
+    {
+        if (value == Value)
+            return;
+        _shown = value;
+        await ValueChanged.InvokeAsync(value);
+    }
+}

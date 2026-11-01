@@ -1,0 +1,107 @@
+@* Editor for a fixed-length coefficient list. Values can be typed one by one or pasted from a spreadsheet. *@
+<details class="coefficients @(Error is not null ? "invalid" : "")" open="@(Error is not null)">
+    <summary>
+        <span>@Label</span>
+        <span class="muted">@(Value is null ? "not set" : $"{Value.Length} values")</span>
+    </summary>
+    @if (Value is null)
+    {
+        <button type="button" class="ghost" @onclick="() => Commit(new double[Length])">Add coefficients</button>
+    }
+    else
+    {
+        <div class="coefficient-grid">
+            @for (int i = 0; i < Value.Length; i++)
+            {
+                int index = i;
+                <label for="@($"{_id}-{index}")">@(index < Labels.Count ? Labels[index] : $"c{index + 1}")</label>
+                <input id="@($"{_id}-{index}")" type="text" inputmode="decimal" spellcheck="false"
+                       value="@Format.Number(Value[index], 15)" @onchange="e => SetOne(index, e.Value?.ToString())"/>
+            }
+        </div>
+    }
+    <div class="field">
+        <label for="@($"{_id}-paste")">Paste all values</label>
+        <textarea id="@($"{_id}-paste")" rows="2" spellcheck="false" placeholder="@Length numbers separated by spaces, tabs, semicolons or new lines"
+                  @onchange="Paste"></textarea>
+    </div>
+    @if (_pasteError is not null)
+    {
+        <div class="field-message">@_pasteError</div>
+    }
+    else if (Error is not null)
+    {
+        <div class="field-message">@Error</div>
+    }
+    else if (Help is not null)
+    {
+        <div class="field-help">@Help</div>
+    }
+    @if (Optional && Value is not null)
+    {
+        <button type="button" class="ghost danger" @onclick="() => Commit(null)">Remove</button>
+    }
+</details>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter] public double[]? Value { get; set; }
+    [Parameter] public int Length { get; set; } = 10;
+    [Parameter] public IReadOnlyList<string> Labels { get; set; } = [];
+    [Parameter] public bool Optional { get; set; }
+    [Parameter] public string? Help { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public EventCallback<double[]?> ValueChanged { get; set; }
+
+    private readonly string _id = "c" + Guid.NewGuid().ToString("N")[..8];
+    private string? _pasteError;
+
+    private async Task SetOne(int index, string? text)
+    {
+        if (Value is null || !Format.TryParse(text, out double number))
+            return;
+        double[] copy = Value.ToArray();
+        copy[index] = number;
+        await Commit(copy);
+    }
+
+    private async Task Paste(ChangeEventArgs e)
+    {
+        string text = e.Value?.ToString() ?? "";
+        if (string.IsNullOrWhiteSpace(text))
+            return;
+
+        // Whitespace, tabs and semicolons separate values. Commas only do when nothing else does,
+        // so "1,5 2,3" is read as decimal commas.
+        string[] parts = System.Text.RegularExpressions.Regex.Split(text.Trim(), @"[\s;]+");
+        if (parts.Length == 1)
+            parts = text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        List<double> values = [];
+        foreach (string part in parts)
+        {
+            if (!Format.TryParse(part, out double number))
+            {
+                _pasteError = $"'{part}' is not a number.";
+                return;
+            }
+
+            values.Add(number);
+        }
+
+        if (values.Count != Length)
+        {
+            _pasteError = $"Expected {Length} values, got {values.Count}.";
+            return;
+        }
+
+        _pasteError = null;
+        await Commit(values.ToArray());
+    }
+
+    private async Task Commit(double[]? values)
+    {
+        _pasteError = null;
+        await ValueChanged.InvokeAsync(values);
+    }
+}

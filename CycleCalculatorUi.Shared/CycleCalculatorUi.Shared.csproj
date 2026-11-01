@@ -15,7 +15,7 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\CycleCalculator\CycleCalculator\CycleCalculator.csproj"/>
+        <ProjectReference Include="..\CycleCalculatorUi.Core\CycleCalculatorUi.Core.csproj"/>
     </ItemGroup>
 
 </Project>

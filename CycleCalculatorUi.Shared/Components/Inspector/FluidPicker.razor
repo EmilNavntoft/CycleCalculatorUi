@@ -1,0 +1,39 @@
+@* Fluid and CoolProp backend. The fluid accepts any CoolProp name; the list offers common refrigerants. *@
+<div class="field">
+    <label for="@_id">@Label</label>
+    <input id="@_id" list="@(_id)l" value="@Value.Fluid" spellcheck="false" autocomplete="off"
+           title="@FluidOptions.FluidLabel(Value.Fluid)"
+           @onchange="e => Commit(e.Value?.ToString(), Value.Backend)"/>
+    <datalist id="@(_id)l">
+        @foreach (ChoiceOption option in FluidOptions.Fluids)
+        {
+            <option value="@option.Value">@option.Label</option>
+        }
+    </datalist>
+</div>
+<div class="field">
+    <label for="@(_id)b">Property backend</label>
+    <select id="@(_id)b" value="@Value.Backend" @onchange="e => Commit(Value.Fluid, e.Value?.ToString())">
+        @foreach (ChoiceOption option in FluidOptions.Backends)
+        {
+            <option value="@option.Value">@option.Label</option>
+        }
+    </select>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter, EditorRequired] public FluidSelection Value { get; set; } = null!;
+    [Parameter] public EventCallback<FluidSelection> ValueChanged { get; set; }
+
+    private readonly string _id = "fl" + Guid.NewGuid().ToString("N")[..8];
+
+    private async Task Commit(string? fluid, string? backend)
+    {
+        if (string.IsNullOrWhiteSpace(fluid) || string.IsNullOrWhiteSpace(backend))
+            return;
+        FluidSelection selection = new(fluid.Trim(), backend);
+        if (selection != Value)
+            await ValueChanged.InvokeAsync(selection);
+    }
+}

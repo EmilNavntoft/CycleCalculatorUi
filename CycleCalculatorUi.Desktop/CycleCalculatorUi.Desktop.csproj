@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+    <PropertyGroup>
+        <OutputType>WinExe</OutputType>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <RootNamespace>CycleCalculatorUi.Desktop</RootNamespace>
+        <!-- The backend project references test packages; don't generate a test entry point for the app. -->
+        <IsTestProject>false</IsTestProject>
+        <GenerateTestingPlatformEntryPoint>false</GenerateTestingPlatformEntryPoint>
+        <GenerateProgramFile>false</GenerateProgramFile>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Photino.Blazor" Version="4.0.13"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\CycleCalculatorUi.Shared\CycleCalculatorUi.Shared.csproj"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <Content Update="wwwroot\**">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </Content>
+    </ItemGroup>
+
+    <!-- Photino serves files only from the output wwwroot folder, so copy the shared UI assets
+         to where the page expects them (_content/CycleCalculatorUi.Shared/...). -->
+    <Target Name="CopySharedStaticAssets" AfterTargets="Build">
+        <ItemGroup>
+            <SharedStaticAsset Include="..\CycleCalculatorUi.Shared\wwwroot\**\*"/>
+        </ItemGroup>
+        <Copy SourceFiles="@(SharedStaticAsset)"
+              DestinationFiles="@(SharedStaticAsset->'$(OutDir)wwwroot\_content\CycleCalculatorUi.Shared\%(RecursiveDir)%(Filename)%(Extension)')"
+              SkipUnchangedFiles="true"/>
+    </Target>
+
+</Project>

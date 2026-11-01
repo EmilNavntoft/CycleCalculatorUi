@@ -1,0 +1,157 @@
+@* Properties of the selection, generated from the component descriptors. *@
+<aside class="panel inspector">
+    @if (State.SelectedNode is { } node && State.Catalog.Find(node.TypeId) is { } descriptor)
+    {
+        IReadOnlyList<ValidationIssue> issues = State.IssuesFor(node.Id);
+        <div class="inspector-title">
+            <ComponentGlyph TypeId="@node.TypeId" Standalone="true"/>
+            <div>
+                <div class="eyebrow">@descriptor.DisplayName</div>
+                <input class="name-input" value="@node.Name" aria-label="Component name"
+                       @onchange="e => State.Rename(node.Id, e.Value?.ToString() ?? node.Name)"/>
+            </div>
+        </div>
+        <p class="description">@descriptor.Description</p>
+
+        <div class="button-row">
+            <button type="button" class="ghost" title="Rotate (R)" @onclick="() => State.RotateSelection(90)">Rotate</button>
+            <button type="button" class="ghost" title="Flip (F)" @onclick="State.FlipSelection">Flip</button>
+            <button type="button" class="ghost danger" title="Delete (Del)" @onclick="State.RemoveSelection">Delete</button>
+        </div>
+
+        @if (issues.Any(i => i.ParameterKey is null))
+        {
+            <ul class="issue-list">
+                @foreach (ValidationIssue issue in issues.Where(i => i.ParameterKey is null))
+                {
+                    <li class="@issue.Severity.ToString().ToLowerInvariant()">@issue.Message</li>
+                }
+            </ul>
+        }
+
+        @if (descriptor.Parameters.Count > 0)
+        {
+            <section class="inspector-section">
+                <h3>Parameters</h3>
+                @foreach (ParameterDescriptor parameter in descriptor.Parameters.Where(p => p.Active(node)))
+                {
+                    string? error = issues.FirstOrDefault(i => i.ParameterKey == parameter.Key)?.Message;
+                    if (parameter.Kind == ParameterKind.Choice)
+                    {
+                        string current = node.Choices.GetValueOrDefault(parameter.Key) ?? parameter.DefaultChoice ?? "";
+                        <div class="field">
+                            <label>@parameter.Label</label>
+                            <select value="@current" @onchange="e => State.SetChoice(node.Id, parameter.Key, e.Value?.ToString() ?? current)">
+                                @foreach (ChoiceOption option in parameter.Options)
+                                {
+                                    <option value="@option.Value">@option.Label</option>
+                                }
+                            </select>
+                        </div>
+                    }
+                    else if (parameter.Kind == ParameterKind.Coefficients)
+                    {
+                        <CoefficientsField @key="(node.Id, parameter.Key)" Label="@parameter.Label" Length="parameter.Length"
+                                           Labels="parameter.CoefficientLabels" Optional="parameter.Optional" Help="@parameter.Help"
+                                           Error="@StripName(error, node)"
+                                           Value="node.Arrays.TryGetValue(parameter.Key, out double[]? values) ? values : parameter.DefaultCoefficients"
+                                           ValueChanged="v => State.SetCoefficients(node.Id, parameter.Key, v)"/>
+                    }
+                    else
+                    {
+                        <NumberField @key="(node.Id, parameter.Key)" Label="@parameter.Label" Unit="@parameter.Unit"
+                                     Optional="parameter.Optional" Help="@parameter.Help" Error="@StripName(error, node)"
+                                     Value="node.Numbers.GetValueOrDefault(parameter.Key, parameter.DefaultNumber)"
+                                     ValueChanged="v => State.SetNumber(node.Id, parameter.Key, v)"/>
+                    }
+                }
+            </section>
+        }
+
+        <section class="inspector-section">
+            <h3>Fluid</h3>
+            @for (int stream = 0; stream < descriptor.Streams.Count; stream++)
+            {
+                int s = stream;
+                FluidSelection fluid = State.FluidOf(node.Id, s);
+                <FluidPicker Label="@(descriptor.Streams.Count > 1 ? descriptor.Streams[s] : "Fluid")" Value="fluid"
+                             ValueChanged="f => State.SetCircuitFluid(new StreamRef(node.Id, s), f)"/>
+            }
+            <div class="field-help">Applies to every component connected to this @(descriptor.Streams.Count > 1 ? "stream" : "component").</div>
+        </section>
+
+        <ResultSection State="State" Node="node" Descriptor="descriptor"/>
+    }
+    else if (State.SelectedNodeIds.Count > 1)
+    {
+        <div class="panel-header"><h2>@State.SelectedNodeIds.Count components selected</h2></div>
+        <div class="button-row">
+            <button type="button" class="ghost" @onclick="() => State.RotateSelection(90)">Rotate</button>
+            <button type="button" class="ghost" @onclick="State.FlipSelection">Flip</button>
+            <button type="button" class="ghost danger" @onclick="State.RemoveSelection">Delete</button>
+        </div>
+    }
+    else if (SelectedConnection is { } connection)
+    {
+        <div class="panel-header"><h2>@(connection.Kind == ConnectionKind.Fluid ? "Fluid connection" : "Signal connection")</h2></div>
+        <dl class="facts">
+            <dt>From</dt><dd>@Describe(connection.From)</dd>
+            <dt>To</dt><dd>@Describe(connection.To)</dd>
+        </dl>
+        @if (connection.Kind == ConnectionKind.Fluid && State.Result?.Port(connection.From.NodeId, connection.From.PortKey) is { } value)
+        {
+            <dl class="facts @(State.IsResultStale ? "stale" : "")">
+                <dt>Mass flow</dt><dd>@Format.MassFlow(Math.Abs(value.MassFlow)) kg/s</dd>
+                <dt>Pressure</dt><dd>@Format.Pressure(value.Pressure) bar</dd>
+                <dt>Temperature</dt><dd>@Format.Temperature(value.Temperature) °C</dd>
+                <dt>Enthalpy</dt><dd>@Format.Enthalpy(value.Enthalpy) kJ/kg</dd>
+            </dl>
+        }
+        <div class="button-row">
+            <button type="button" class="ghost danger" @onclick="State.RemoveSelection">Delete connection</button>
+        </div>
+    }
+    else
+    {
+        <div class="panel-header"><h2>System</h2></div>
+        <div class="field">
+            <label for="system-name">Name</label>
+            <input id="system-name" value="@State.Document.Name" @onchange="e => State.SetDocumentName(e.Value?.ToString() ?? State.Document.Name)"/>
+        </div>
+        <section class="inspector-section">
+            <h3>Default fluid for new components</h3>
+            <FluidPicker Label="Fluid" Value="State.Document.DefaultFluid"
+                         ValueChanged="f => State.Edit(d => d.DefaultFluid = f)"/>
+        </section>
+        <section class="inspector-section help">
+            <h3>How to</h3>
+            <ul>
+                <li>Drag components from the library onto the canvas.</li>
+                <li>Drag from one port to another to connect them, or click both ports.</li>
+                <li>Connect a valve's top port to any fluid port to control on its temperature or superheat.</li>
+                <li>Pan with the right or middle mouse button, zoom with the wheel.</li>
+                <li><kbd>R</kbd> rotate, <kbd>F</kbd> flip, <kbd>Del</kbd> delete, <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo.</li>
+            </ul>
+        </section>
+    }
+</aside>
+
+@code {
+    [Parameter, EditorRequired] public EditorState State { get; set; } = null!;
+
+    private ConnectionModel? SelectedConnection =>
+        State.Document.Connections.FirstOrDefault(c => c.Id == State.SelectedConnectionId);
+
+    private string Describe(PortRef port)
+    {
+        NodeModel? node = State.Document.FindNode(port.NodeId);
+        string? label = node is null ? null : State.Catalog.Find(node.TypeId)?.FindPort(port.PortKey)?.Label;
+        return node is null ? "?" : $"{node.Name} · {label ?? port.PortKey}";
+    }
+
+    /// <summary>Field messages sit under the field, so the "Name: " prefix is redundant there.</summary>
+    private static string? StripName(string? message, NodeModel node) =>
+        message is not null && message.StartsWith(node.Name + ": ", StringComparison.Ordinal)
+            ? message[(node.Name.Length + 2)..]
+            : message;
+}

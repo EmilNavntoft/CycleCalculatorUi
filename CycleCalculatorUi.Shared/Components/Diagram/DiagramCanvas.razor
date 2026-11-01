@@ -1,0 +1,269 @@
+@implements IAsyncDisposable
+@inject IJSRuntime Js
+
+@{
+    SolveResult? result = State.Result;
+    bool stale = State.IsResultStale;
+    IReadOnlyList<FluidCircuit> circuits = State.Circuits;
+    HashSet<FluidCircuit> conflicts = circuits.Where(c => c.HasConflict).ToHashSet();
+    HashSet<(string, string)> issuePorts = State.Issues
+        .Where(i => i.NodeId is not null && i.PortKey is not null)
+        .Select(i => (i.NodeId!, i.PortKey!)).ToHashSet();
+}
+
+<svg class="diagram" @ref="_svg" tabindex="0" aria-label="System diagram">
+    <defs>
+        <pattern id="diagram-grid" width="16" height="16" patternUnits="userSpaceOnUse">
+            <circle cx="0.5" cy="0.5" r="0.9" class="grid-dot"/>
+        </pattern>
+    </defs>
+    <g data-viewport>
+        <rect class="grid" x="-20000" y="-20000" width="40000" height="40000" fill="url(#diagram-grid)"/>
+
+        @foreach (ConnectionModel connection in State.Document.Connections)
+        {
+            FluidCircuit? circuit = connection.Kind == ConnectionKind.Fluid
+                ? FluidCircuitResolver.CircuitOf(circuits, FluidCircuitResolver.StreamOf(State.Document, State.Catalog, connection.From) ?? new StreamRef("", 0))
+                : null;
+            string fluidClass = circuit is null ? "" : conflicts.Contains(circuit) ? "conflict" : FluidClass(circuit.Fluid.Fluid);
+            <g @key="connection.Id"
+               class="connection @(connection.Kind == ConnectionKind.Signal ? "signal" : "fluid") @fluidClass @(State.SelectedConnectionId == connection.Id ? "selected" : "")"
+               data-connection-id="@connection.Id"
+               data-from="@($"{connection.From.NodeId}|{connection.From.PortKey}")"
+               data-to="@($"{connection.To.NodeId}|{connection.To.PortKey}")">
+                <path class="hit"/>
+                <path class="line"/>
+            </g>
+        }
+
+        @foreach (NodeModel node in State.Document.Nodes)
+        {
+            ComponentDescriptor? descriptor = State.Catalog.Find(node.TypeId);
+            bool selected = State.SelectedNodeIds.Contains(node.Id);
+            bool hasError = State.IssuesFor(node.Id).Any(i => i.Severity == IssueSeverity.Error);
+            <g @key="node.Id"
+               class="node @(selected ? "selected" : "") @(hasError ? "has-error" : "")"
+               data-node-id="@node.Id"
+               data-selected="@(selected ? "true" : "false")"
+               data-x="@Geometry.F(node.X)" data-y="@Geometry.F(node.Y)"
+               transform="translate(@Geometry.F(node.X) @Geometry.F(node.Y))">
+                <g transform="@Geometry.SymbolTransform(node)">
+                    <rect class="node-frame" x="-6" y="-6" width="@(Geometry.NodeWidth + 12)" height="@(Geometry.NodeHeight + 12)" rx="8"/>
+                    <ComponentGlyph TypeId="@node.TypeId"/>
+                    @if (descriptor is not null)
+                    {
+                        foreach (PortDescriptor port in descriptor.Ports)
+                        {
+                            Geometry.Point at = Geometry.Local(port);
+                            Geometry.Point dir = Geometry.LocalDirection(port);
+                            PortRef reference = new(node.Id, port.Key);
+                            bool connected = ConnectionRules.IsConnected(State.Document, reference);
+                            bool missing = issuePorts.Contains((node.Id, port.Key));
+                            <circle class="port @(port.Kind == PortKind.SignalInput ? "signal" : "fluid") @(connected ? "connected" : "") @(missing ? "missing" : "")"
+                                    cx="@Geometry.F(at.X)" cy="@Geometry.F(at.Y)" r="5"
+                                    data-port-node="@node.Id" data-port-key="@port.Key"
+                                    data-dir="@($"{dir.X},{dir.Y}")">
+                                <title>@PortTooltip(node, port, result)</title>
+                            </circle>
+                        }
+                    }
+                </g>
+                <text class="node-label" x="@(Geometry.NodeWidth / 2)" y="@Geometry.F(Geometry.LabelOffset(node))">@node.Name</text>
+            </g>
+        }
+
+        @if (ShowValues && result is { Success: true })
+        {
+            <g class="values @(stale ? "stale" : "")">
+                @foreach (ConnectionModel connection in State.Document.Connections.Where(c => c.Kind == ConnectionKind.Fluid))
+                {
+                    if (State.Document.FindNode(connection.From.NodeId) is not { } node ||
+                        State.Catalog.Find(node.TypeId)?.FindPort(connection.From.PortKey) is not { } port ||
+                        result.Port(node.Id, port.Key) is not { } value)
+                    {
+                        continue;
+                    }
+
+                    (Geometry.Point at, Geometry.Point dir) = Geometry.World(node, port);
+                    bool vertical = dir.Y != 0;
+                    double x = at.X + (vertical ? 8 : dir.X * 10);
+                    double y = at.Y + (vertical ? dir.Y * 16 : -16);
+                    string anchor = vertical || dir.X > 0 ? "start" : "end";
+                    @* Wrapped in <g> because Razor treats a bare <text> in code as a special tag. *@
+                    <g @key="connection.Id">
+                        <text class="value-label" x="@Geometry.F(x)" y="@Geometry.F(y)" text-anchor="@anchor">
+                            <tspan x="@Geometry.F(x)">@Format.Pressure(value.Pressure) bar · @Format.Temperature(value.Temperature) °C</tspan>
+                            <tspan x="@Geometry.F(x)" dy="11">@Format.MassFlow(Math.Abs(value.MassFlow)) kg/s</tspan>
+                        </text>
+                    </g>
+                }
+            </g>
+        }
+    </g>
+    <g data-overlay class="overlay"></g>
+</svg>
+
+@code {
+    [Parameter, EditorRequired] public EditorState State { get; set; } = null!;
+
+    /// <summary>Show pressure, temperature and mass flow next to each connection.</summary>
+    [Parameter] public bool ShowValues { get; set; }
+
+    /// <summary>Raised with a message to show the user, e.g. why a connection was refused.</summary>
+    [Parameter] public EventCallback<string> OnMessage { get; set; }
+
+    /// <summary>Raised for document shortcuts handled by the page: "save" (Ctrl+S) and "open" (Ctrl+O).</summary>
+    [Parameter] public EventCallback<string> OnShortcut { get; set; }
+
+    private ElementReference _svg;
+    private IJSObjectReference? _module;
+    private IJSObjectReference? _handle;
+    private DotNetObjectReference<DiagramCanvas>? _self;
+    private bool _fitRequested;
+
+    public void RequestFit()
+    {
+        _fitRequested = true;
+        StateHasChanged();
+    }
+
+    public async Task ZoomAsync(double factor)
+    {
+        if (_module is not null)
+            await _module.InvokeVoidAsync("zoom", _handle, factor);
+    }
+
+    public async Task FitAsync()
+    {
+        if (_module is not null)
+            await _module.InvokeVoidAsync("fit", _handle);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _self = DotNetObjectReference.Create(this);
+            _module = await Js.InvokeAsync<IJSObjectReference>("import", "./_content/CycleCalculatorUi.Shared/diagram.js");
+            _handle = await _module.InvokeAsync<IJSObjectReference>("init", _svg, _self);
+        }
+        else if (_module is not null)
+        {
+            // Connection paths are computed in the script from the rendered port positions.
+            await _module.InvokeVoidAsync("layout", _handle);
+        }
+
+        if (_fitRequested && _module is not null)
+        {
+            _fitRequested = false;
+            await _module.InvokeVoidAsync("fit", _handle);
+        }
+    }
+
+    private static string FluidClass(string fluid) => "fluid-" + new string(fluid.Where(char.IsLetterOrDigit).ToArray());
+
+    private static string PortTooltip(NodeModel node, PortDescriptor port, SolveResult? result)
+    {
+        string title = $"{node.Name} · {port.Label}";
+        if (port.Kind == PortKind.SignalInput)
+            return title + " (signal input: connect to a fluid port to measure it)";
+        return result?.Port(node.Id, port.Key) is { } value
+            ? $"{title}\nṁ = {Format.MassFlow(value.MassFlow)} kg/s\np = {Format.Pressure(value.Pressure)} bar\n" +
+              $"T = {Format.Temperature(value.Temperature)} °C\nh = {Format.Enthalpy(value.Enthalpy)} kJ/kg"
+            : title;
+    }
+
+    #region called from diagram.js
+
+    public sealed record NodeMove(string Id, double X, double Y);
+
+    [JSInvokable]
+    public void DropComponent(string typeId, double x, double y)
+    {
+        if (State.Catalog.Find(typeId) is not null)
+            State.AddNode(typeId, x, y);
+    }
+
+    [JSInvokable]
+    public void SelectNode(string nodeId, bool additive) => State.Select(nodeId, additive);
+
+    [JSInvokable]
+    public void SelectNodes(string[] nodeIds, bool additive) => State.SelectNodes(nodeIds, additive);
+
+    [JSInvokable]
+    public void ClearSelection() => State.Select(null);
+
+    [JSInvokable]
+    public void SelectConnection(string connectionId) => State.SelectConnection(connectionId);
+
+    [JSInvokable]
+    public void MoveNodes(NodeMove[] moves) =>
+        State.MoveNodes(moves.ToDictionary(move => move.Id, move => (move.X, move.Y)));
+
+    [JSInvokable]
+    public async Task ConnectPorts(string nodeA, string portA, string nodeB, string portB)
+    {
+        string? error = State.Connect(new PortRef(nodeA, portA), new PortRef(nodeB, portB));
+        if (error is not null)
+            await OnMessage.InvokeAsync(error);
+    }
+
+    [JSInvokable]
+    public async Task OnKey(string key, bool ctrl, bool shift)
+    {
+        switch (key)
+        {
+            case "s" or "S" when ctrl:
+                await OnShortcut.InvokeAsync("save");
+                break;
+            case "o" or "O" when ctrl:
+                await OnShortcut.InvokeAsync("open");
+                break;
+            case "Delete" or "Backspace":
+                State.RemoveSelection();
+                break;
+            case "Escape":
+                State.Select(null);
+                break;
+            case "r" or "R":
+                State.RotateSelection(shift ? -90 : 90);
+                break;
+            case "f" or "F":
+                State.FlipSelection();
+                break;
+            case "z" or "Z" when ctrl && shift:
+            case "y" or "Y" when ctrl:
+                State.Redo();
+                break;
+            case "z" or "Z" when ctrl:
+                State.Undo();
+                break;
+            case "a" or "A" when ctrl:
+                State.SelectAll();
+                break;
+        }
+    }
+
+    #endregion
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            if (_module is not null)
+            {
+                await _module.InvokeVoidAsync("dispose", _handle);
+                await _module.DisposeAsync();
+            }
+
+            if (_handle is not null)
+                await _handle.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+            // The browser is gone; nothing to clean up.
+        }
+
+        _self?.Dispose();
+    }
+}

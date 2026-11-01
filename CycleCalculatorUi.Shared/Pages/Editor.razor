@@ -1,0 +1,295 @@
+@page "/"
+@implements IDisposable
+@using CycleCalculatorUi.Core.Persistence
+@inject EditorState State
+@inject IFileService Files
+@inject IDraftStore Drafts
+
+<PageTitle>@State.Document.Name · CycleCalculator</PageTitle>
+
+<div class="editor">
+    <header class="toolbar">
+        <div class="brand"><span class="brand-mark">C</span><span>CycleCalculator</span></div>
+        <div class="toolbar-group">
+            <button type="button" class="ghost" title="New system" @onclick="NewDocument">New</button>
+            @if (Files.HasOpenDialog)
+            {
+                <button type="button" class="ghost" title="Open (Ctrl+O)" @onclick="OpenAsync">Open</button>
+            }
+            else
+            {
+                <label class="file-button" title="Open a .cycle.json file">
+                    Open
+                    <InputFile accept=".json,.cycle.json" OnChange="OpenUploadAsync"/>
+                </label>
+            }
+            <button type="button" class="ghost" title="Save (Ctrl+S)" disabled="@(State.Document.Nodes.Count == 0)" @onclick="SaveAsync">Save</button>
+            <button type="button" class="ghost" title="Export all port results as CSV"
+                    disabled="@(State.Result is not { Success: true })" @onclick="ExportCsvAsync">Export CSV</button>
+            <select @key="_exampleKey" class="examples" aria-label="Open example" @onchange="OpenExample">
+                <option value="" disabled selected>Open example…</option>
+                @for (int i = 0; i < ExampleSystems.All.Count; i++)
+                {
+                    <option value="@i">@ExampleSystems.All[i].Title</option>
+                }
+            </select>
+        </div>
+        <div class="toolbar-group">
+            <button type="button" class="icon" title="Undo (Ctrl+Z)" aria-label="Undo" disabled="@(!State.CanUndo)" @onclick="State.Undo">
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 4 3 8l4 4M3 8h9a5 5 0 0 1 0 10H9"/></svg>
+            </button>
+            <button type="button" class="icon" title="Redo (Ctrl+Y)" aria-label="Redo" disabled="@(!State.CanRedo)" @onclick="State.Redo">
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m13 4 4 4-4 4m4-4H8a5 5 0 0 0 0 10h3"/></svg>
+            </button>
+        </div>
+        <div class="toolbar-group">
+            <button type="button" class="icon" title="Zoom out" aria-label="Zoom out" @onclick="() => _canvas!.ZoomAsync(1 / 1.25)">
+                <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="6"/><path d="M6 9h6m2.5 4.5L18 17"/></svg>
+            </button>
+            <button type="button" class="icon" title="Zoom in" aria-label="Zoom in" @onclick="() => _canvas!.ZoomAsync(1.25)">
+                <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="6"/><path d="M6 9h6M9 6v6m5.5 1.5L18 17"/></svg>
+            </button>
+            <button type="button" class="icon" title="Fit to window" aria-label="Fit to window" @onclick="() => _canvas!.FitAsync()">
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 7V3h4m6 0h4v4m0 6v4h-4m-6 0H3v-4"/></svg>
+            </button>
+            <label class="toggle" title="Show pressure, temperature and mass flow on the diagram">
+                <input type="checkbox" @bind="_showValues"/> Values
+            </label>
+        </div>
+        <span class="spacer"></span>
+        <span class="status @StatusClass" role="status">@StatusText</span>
+        @if (State.IsSolving)
+        {
+            <button type="button" class="secondary" @onclick="State.CancelSolve">Cancel</button>
+        }
+        else
+        {
+            <button type="button" class="primary" disabled="@(State.Document.Nodes.Count == 0)" @onclick="CalculateAsync">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.5v9l7-4.5z"/></svg>
+                Calculate
+            </button>
+        }
+    </header>
+
+    <div class="workspace">
+        <ComponentPalette Catalog="State.Catalog"/>
+        <main class="canvas-area">
+            <DiagramCanvas @ref="_canvas" State="State" ShowValues="_showValues" OnMessage="ShowMessage" OnShortcut="OnShortcutAsync"/>
+            @if (State.Document.Nodes.Count == 0)
+            {
+                <div class="empty-state">
+                    <strong>Start a new system</strong>
+                    <span>Drag components from the library, or open an example:</span>
+                    @for (int i = 0; i < ExampleSystems.All.Count; i++)
+                    {
+                        int index = i;
+                        <button type="button" class="link" @onclick="() => LoadExample(index)">@ExampleSystems.All[i].Title</button>
+                    }
+                </div>
+            }
+            @if (_message is not null)
+            {
+                <div class="toast" role="alert">@_message</div>
+            }
+        </main>
+        <InspectorPanel State="State"/>
+    </div>
+
+    <BottomPanel @ref="_bottom" State="State"/>
+</div>
+
+@code {
+    private DiagramCanvas? _canvas;
+    private BottomPanel? _bottom;
+    private bool _showValues = true;
+    private string? _message;
+    private int _exampleKey;
+    private CancellationTokenSource? _messageTimer;
+
+    private static readonly FileType CycleFile = new("Cycle system", DocumentSerializer.FileExtension);
+    private static readonly FileType CsvFile = new("CSV table", ".csv");
+
+    private CancellationTokenSource? _autosave;
+    private bool _draftLoaded;
+
+    protected override void OnInitialized() => State.Changed += OnStateChanged;
+
+    private void OnStateChanged()
+    {
+        InvokeAsync(StateHasChanged);
+        ScheduleAutosave();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        // Restore the draft from the last session, if any.
+        try
+        {
+            if (await Drafts.LoadAsync() is { Length: > 0 } json && State.Document.Nodes.Count == 0)
+            {
+                SystemDocument draft = DocumentSerializer.Deserialize(json);
+                if (draft.Nodes.Count > 0)
+                {
+                    State.Load(draft);
+                    _canvas?.RequestFit();
+                }
+            }
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or JSException)
+        {
+            // An unreadable draft is not worth bothering the user with.
+        }
+
+        _draftLoaded = true;
+    }
+
+    /// <summary>Saves a draft shortly after the last change, so typing does not write on every key.</summary>
+    private void ScheduleAutosave()
+    {
+        if (!_draftLoaded)
+            return;
+        _autosave?.Cancel();
+        _autosave = new CancellationTokenSource();
+        CancellationToken token = _autosave.Token;
+        string json = DocumentSerializer.Serialize(State.Document);
+        _ = Task.Delay(800, token).ContinueWith(async _ =>
+        {
+            try
+            {
+                await InvokeAsync(() => Drafts.SaveAsync(json));
+            }
+            catch (Exception ex) when (ex is IOException or JSException or JSDisconnectedException or ObjectDisposedException)
+            {
+                // Autosave is best effort.
+            }
+        }, token, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
+    }
+
+    private async Task OnShortcutAsync(string command)
+    {
+        if (command == "save" && State.Document.Nodes.Count > 0)
+            await SaveAsync();
+        else if (command == "open" && Files.HasOpenDialog)
+            await OpenAsync();
+    }
+
+    private async Task SaveAsync() =>
+        await Files.SaveAsync(FileName(State.Document.Name) + CycleFile.Extension, DocumentSerializer.Serialize(State.Document), CycleFile);
+
+    private async Task OpenAsync()
+    {
+        if (await Files.OpenAsync(CycleFile) is { } file)
+            LoadFile(file.Name, file.Content);
+    }
+
+    private async Task OpenUploadAsync(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            await using Stream stream = e.File.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            using StreamReader reader = new(stream);
+            LoadFile(e.File.Name, await reader.ReadToEndAsync());
+        }
+        catch (IOException ex)
+        {
+            ShowMessage($"Could not read {e.File.Name}: {ex.Message}");
+        }
+    }
+
+    private void LoadFile(string name, string content)
+    {
+        try
+        {
+            State.Load(DocumentSerializer.Deserialize(content));
+            _canvas?.RequestFit();
+        }
+        catch (InvalidDataException ex)
+        {
+            ShowMessage($"Could not open {name}: {ex.Message}");
+        }
+    }
+
+    private async Task ExportCsvAsync()
+    {
+        if (State.Result is { Success: true } result)
+            await Files.SaveAsync(FileName(State.Document.Name) + " results.csv", ResultExport.ToCsv(State.Document, State.Catalog, result), CsvFile);
+    }
+
+    /// <summary>A file name based on the system name, without characters file systems reject.</summary>
+    private static string FileName(string name)
+    {
+        string cleaned = new(name.Select(c => Path.GetInvalidFileNameChars().Contains(c) || c is ':' or '*' or '?' ? '_' : c).ToArray());
+        return string.IsNullOrWhiteSpace(cleaned) ? "system" : cleaned.Trim();
+    }
+
+    private string StatusText => State switch
+    {
+        { IsSolving: true } => "Calculating…",
+        { Result: null } => State.Issues.Any(i => i.Severity == IssueSeverity.Error) && State.Document.Nodes.Count > 0
+            ? $"{State.Issues.Count(i => i.Severity == IssueSeverity.Error)} problem(s)"
+            : "",
+        { Result.Success: false } => "Calculation failed",
+        { IsResultStale: true } => "Results out of date",
+        _ => State.Result!.Message
+    };
+
+    private string StatusClass => State switch
+    {
+        { IsSolving: true } => "busy",
+        { Result: null } => State.Document.Nodes.Count > 0 && State.Issues.Any(i => i.Severity == IssueSeverity.Error) ? "warn" : "",
+        { Result.Success: false } => "error",
+        { IsResultStale: true } => "warn",
+        _ => "ok"
+    };
+
+    private async Task CalculateAsync()
+    {
+        await State.SolveAsync();
+        if (State.Result is { Success: false } failed && failed.Issues.Count == 0)
+            ShowMessage(failed.Message);
+        _bottom?.Show(results: State.Result is { Success: true });
+    }
+
+    private void NewDocument()
+    {
+        State.New();
+        _canvas?.RequestFit();
+    }
+
+    private void OpenExample(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int index))
+            LoadExample(index);
+        _exampleKey++; // re-create the select so it shows the placeholder again
+    }
+
+    private void LoadExample(int index)
+    {
+        State.Load(ExampleSystems.All[index].Create());
+        _canvas?.RequestFit();
+    }
+
+    private void ShowMessage(string message)
+    {
+        _message = message;
+        _messageTimer?.Cancel();
+        _messageTimer = new CancellationTokenSource();
+        CancellationToken token = _messageTimer.Token;
+        _ = Task.Delay(TimeSpan.FromSeconds(4), token).ContinueWith(_ => InvokeAsync(() =>
+        {
+            _message = null;
+            StateHasChanged();
+        }), token, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        State.Changed -= OnStateChanged;
+        _messageTimer?.Cancel();
+        _autosave?.Cancel();
+    }
+}
