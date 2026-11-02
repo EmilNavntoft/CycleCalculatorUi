@@ -1,7 +1,9 @@
 @* Log p-h diagram of each fluid in the system, with the solved port states and processes drawn on top. *@
 @using CycleCalculatorUi.Core.Charts
+@implements IAsyncDisposable
+@inject IJSRuntime Js
 
-<div class="ph-view">
+<div class="ph-view" @ref="_container">
     <div class="ph-header">
         @if (_charts.Count > 1)
         {
@@ -23,6 +25,8 @@
         </span>
         <span class="spacer"></span>
         <span class="muted">@Hint</span>
+        <button type="button" class="ghost small" disabled="@(Current is not { IsZoomed: true })" title="Show the whole diagram (or double-click it)"
+                @onclick="() => ResetView(Current?.Fluid, _seq)">Reset zoom</button>
     </div>
 
     @if (Current is null)
@@ -37,18 +41,20 @@
     {
         PhChart c = Current;
         <svg class="ph-chart @(State.IsResultStale ? "stale" : "")" viewBox="0 0 @W @H" preserveAspectRatio="xMidYMid meet"
-             role="img" aria-label="Log p-h diagram of @c.Label">
+             role="img" aria-label="Log p-h diagram of @c.Label"
+             data-fluid="@c.Fluid" data-seq="@_seq" data-plot="@L @T @PlotW @PlotH"
+             data-view="@Exact(c.MinEnthalpy) @Exact(c.MaxEnthalpy) @Exact(c.MinPressure) @Exact(c.MaxPressure)">
             <defs>
                 <clipPath id="ph-clip"><rect x="@L" y="@T" width="@PlotW" height="@PlotH"/></clipPath>
             </defs>
 
             @* Grid and axes *@
-            @foreach (double p in PressureTicks(c))
+            @foreach ((double p, double step) in PressureTicks(c))
             {
                 double y = Y(c, p);
                 <g>
                     <line class="grid" x1="@L" x2="@(L + PlotW)" y1="@N(y)" y2="@N(y)"/>
-                    <text class="tick" x="@(L - 6)" y="@N(y + 3.5)" text-anchor="end">@Tick(p)</text>
+                    <text class="tick" x="@(L - 6)" y="@N(y + 3.5)" text-anchor="end">@Tick(p, step)</text>
                 </g>
             }
             @foreach (double h in EnthalpyTicks(c))
@@ -56,7 +62,7 @@
                 double x = X(c, h);
                 <g>
                     <line class="grid" x1="@N(x)" x2="@N(x)" y1="@T" y2="@(T + PlotH)"/>
-                    <text class="tick" x="@N(x)" y="@(T + PlotH + 14)" text-anchor="middle">@Tick(h)</text>
+                    <text class="tick" x="@N(x)" y="@(T + PlotH + 14)" text-anchor="middle">@Tick(h, EnthalpyStep(c))</text>
                 </g>
             }
             <rect class="frame" x="@L" y="@T" width="@PlotW" height="@PlotH"/>
@@ -64,6 +70,8 @@
             <text class="axis-title" transform="translate(13 @(T + PlotH / 2)) rotate(-90)" text-anchor="middle">Pressure p [bar]</text>
 
             <g clip-path="url(#ph-clip)">
+                @* The zoom script moves this layer while a gesture runs, until the redrawn chart arrives. *@
+                <g data-zoom-layer>
                 <path class="dome-fill" d="@Path(c, c.Saturation)Z"/>
                 @foreach (PhIsotherm iso in c.Isotherms)
                 {
@@ -85,6 +93,7 @@
                     <circle class="hit" cx="@N(X(c, s.Enthalpy))" cy="@N(Y(c, s.Pressure))" r="10"
                             @onmouseover="() => _hover = s" @onmouseout="() => _hover = null" @onclick="() => State.Select(s.NodeId)"/>
                 }
+                </g>
             </g>
 
             @* Isotherm labels along the top edge, at the high-pressure end of each line. *@
@@ -93,7 +102,7 @@
                 double x = X(c, iso.Points[0].Enthalpy);
                 if (x > L + 8 && x < L + PlotW - 8)
                 {
-                    <g><text class="iso-label" x="@N(x)" y="@(T + 11)" text-anchor="middle">@Tick(iso.Temperature)</text></g>
+                    <g class="iso-label-wrap"><text class="iso-label" x="@N(x)" y="@(T + 11)" text-anchor="middle">@Tick(iso.Temperature, IsothermStep(c))</text></g>
                 }
             }
 
@@ -127,6 +136,19 @@
     private PhState? _hover;
     private object? _builtFor;
 
+    // Zoomed ranges per fluid; fluids without an entry show the whole diagram.
+    private readonly Dictionary<string, PhView> _views = [];
+    private int _viewsVersion;
+    private SystemDocument? _viewsDocument;
+
+    // Gesture number of the last view received from the script, echoed back in data-seq.
+    private int _seq;
+
+    private ElementReference _container;
+    private IJSObjectReference? _module;
+    private IJSObjectReference? _handle;
+    private DotNetObjectReference<PhDiagramView>? _self;
+
     private PhChart? Current => _charts.FirstOrDefault(c => c.Fluid == _fluid) ?? _charts.FirstOrDefault();
 
     private string Hint => State.Result switch
@@ -134,19 +156,80 @@
         null => "Calculate to plot the cycle.",
         { Success: false } => "The last calculation failed; no states to plot.",
         _ when State.IsResultStale => "States are from an older calculation.",
-        _ => "Hover a point for values, click to select its component."
+        _ => "Scroll to zoom, drag to pan. Hover a point for values, click to select its component."
     };
 
     protected override void OnParametersSet()
     {
         // Rebuild only when the result or the set of fluids changes; the fluid curves themselves are cached.
+        // A different system (new, opened, example) starts unzoomed.
+        if (!ReferenceEquals(_viewsDocument, State.Document))
+        {
+            _viewsDocument = State.Document;
+            _views.Clear();
+            _viewsVersion++;
+        }
+
         string fluids = string.Join("|", State.Circuits.Select(c => c.Fluid.Fluid).Distinct());
-        var key = (State.Result, fluids, State.IsResultStale, State.Document);
+        var key = (State.Result, fluids, State.IsResultStale, State.Document, _viewsVersion);
         if (Equals(key, _builtFor))
             return;
         _builtFor = key;
-        _charts = PhDiagramBuilder.Build(State.Document, State.Catalog, State.Result);
+        _charts = PhDiagramBuilder.Build(State.Document, State.Catalog, State.Result, _views);
         _hover = null;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+        _self = DotNetObjectReference.Create(this);
+        _module = await Js.InvokeAsync<IJSObjectReference>("import", "./_content/CycleCalculatorUi.Shared/phchart.js");
+        _handle = await _module.InvokeAsync<IJSObjectReference>("init", _container, _self);
+    }
+
+    [JSInvokable]
+    public void SetView(string fluid, double minEnthalpy, double maxEnthalpy, double minPressure, double maxPressure, int seq)
+    {
+        _seq = Math.Max(_seq, seq);
+        if (new[] { minEnthalpy, maxEnthalpy, minPressure, maxPressure }.All(double.IsFinite) &&
+            maxEnthalpy > minEnthalpy && minPressure > 0 && maxPressure > minPressure)
+            _views[fluid] = new PhView(minEnthalpy, maxEnthalpy, minPressure, maxPressure);
+        _viewsVersion++;
+        OnParametersSet();
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void ResetView(string? fluid, int seq)
+    {
+        _seq = Math.Max(_seq, seq);
+        if (fluid is not null)
+            _views.Remove(fluid);
+        _viewsVersion++;
+        OnParametersSet();
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            if (_module is not null)
+            {
+                await _module.InvokeVoidAsync("dispose", _handle);
+                await _module.DisposeAsync();
+            }
+
+            if (_handle is not null)
+                await _handle.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+            // The browser is gone; nothing to clean up.
+        }
+
+        _self?.Dispose();
     }
 
     private static double X(PhChart c, double h) => L + (h - c.MinEnthalpy) / (c.MaxEnthalpy - c.MinEnthalpy) * PlotW;
@@ -156,7 +239,20 @@
 
     private static string N(double value) => value.ToString("0.#", CultureInfo.InvariantCulture);
 
-    private static string Tick(double value) => value.ToString(Math.Abs(value) >= 1 || value == 0 ? "0.##" : "0.###", CultureInfo.InvariantCulture);
+    /// <summary>A view bound written with full precision, for the zoom script.</summary>
+    private static string Exact(double value) => value.ToString("R", CultureInfo.InvariantCulture);
+
+    /// <summary>Formats a tick with as many decimals as its spacing needs.</summary>
+    private static string Tick(double value, double step)
+    {
+        int decimals = Math.Clamp(-(int)Math.Floor(Math.Log10(Math.Abs(step)) + 1e-9), 0, 6);
+        return value.ToString("F" + decimals, CultureInfo.InvariantCulture);
+    }
+
+    private static double EnthalpyStep(PhChart c) => PhDiagramBuilder.NiceStep((c.MaxEnthalpy - c.MinEnthalpy) / 9);
+
+    private static double IsothermStep(PhChart c) =>
+        c.Isotherms.Count > 1 ? Math.Abs(c.Isotherms[1].Temperature - c.Isotherms[0].Temperature) : 1;
 
     private static string Path(PhChart c, IEnumerable<PhPoint> points)
     {
@@ -172,22 +268,33 @@
     }
 
     /// <summary>1, 2 and 5 times each power of ten inside the range (only the powers of ten when the range is wide).</summary>
-    private static IEnumerable<double> PressureTicks(PhChart c)
+    private static List<(double Value, double Step)> PressureTicks(PhChart c)
     {
         int first = (int)Math.Floor(Math.Log10(c.MinPressure)), last = (int)Math.Ceiling(Math.Log10(c.MaxPressure));
         double[] steps = last - first > 4 ? [1] : [1, 2, 5];
+        List<(double, double)> ticks = [];
         for (int d = first; d <= last; d++)
         foreach (double m in steps)
         {
             double value = m * Math.Pow(10, d);
             if (value >= c.MinPressure && value <= c.MaxPressure)
-                yield return value;
+                ticks.Add((value, value));
         }
+
+        if (ticks.Count >= 3)
+            return ticks;
+
+        // Zoomed in to less than a decade: evenly spaced round values instead.
+        double step = PhDiagramBuilder.NiceStep((c.MaxPressure - c.MinPressure) / 5);
+        ticks.Clear();
+        for (double p = Math.Ceiling(c.MinPressure / step) * step; p <= c.MaxPressure; p += step)
+            ticks.Add((Math.Round(p, 9), step));
+        return ticks;
     }
 
     private static IEnumerable<double> EnthalpyTicks(PhChart c)
     {
-        double step = PhDiagramBuilder.NiceStep((c.MaxEnthalpy - c.MinEnthalpy) / 9);
+        double step = EnthalpyStep(c);
         for (double h = Math.Ceiling(c.MinEnthalpy / step) * step; h <= c.MaxEnthalpy; h += step)
             yield return Math.Round(h, 9);
     }

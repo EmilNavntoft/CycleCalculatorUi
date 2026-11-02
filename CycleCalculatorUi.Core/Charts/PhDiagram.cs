@@ -19,6 +19,9 @@ public sealed record PhState(string NodeId, string NodeName, string PortLabel, d
 /// <summary>A line of constant temperature (°C).</summary>
 public sealed record PhIsotherm(double Temperature, IReadOnlyList<PhPoint> Points);
 
+/// <summary>The visible axis ranges of a diagram: enthalpy in kJ/kg, pressure in bar.</summary>
+public sealed record PhView(double MinEnthalpy, double MaxEnthalpy, double MinPressure, double MaxPressure);
+
 /// <summary>Everything needed to draw the log p-h diagram of one fluid.</summary>
 public sealed class PhChart
 {
@@ -29,13 +32,21 @@ public sealed class PhChart
     /// <summary>Set when the fluid's properties could not be computed; the other lists are then empty.</summary>
     public string? Error { get; init; }
 
-    public double MinPressure { get; init; }
+    /// <summary>The visible range; the curves are computed for it.</summary>
+    public PhView View { get; init; } = new(0, 1, 1, 10);
 
-    public double MaxPressure { get; init; }
+    /// <summary>The range that shows the whole dome and all states.</summary>
+    public PhView DefaultView { get; init; } = new(0, 1, 1, 10);
 
-    public double MinEnthalpy { get; init; }
+    public bool IsZoomed => View != DefaultView;
 
-    public double MaxEnthalpy { get; init; }
+    public double MinPressure => View.MinPressure;
+
+    public double MaxPressure => View.MaxPressure;
+
+    public double MinEnthalpy => View.MinEnthalpy;
+
+    public double MaxEnthalpy => View.MaxEnthalpy;
 
     /// <summary>Saturation curve: liquid line up to the critical point, then the vapour line back down.</summary>
     public IReadOnlyList<PhPoint> Saturation { get; init; } = [];
@@ -64,9 +75,11 @@ public static class PhDiagramBuilder
 
     /// <summary>
     /// One chart per distinct fluid in the document. States are added when <paramref name="result"/> is a
-    /// successful solve; pass null to get the bare diagrams.
+    /// successful solve; pass null to get the bare diagrams. <paramref name="views"/> gives a zoomed range per fluid;
+    /// fluids without one show their default range.
     /// </summary>
-    public static IReadOnlyList<PhChart> Build(SystemDocument document, ComponentCatalog catalog, SolveResult? result)
+    public static IReadOnlyList<PhChart> Build(SystemDocument document, ComponentCatalog catalog, SolveResult? result,
+        IReadOnlyDictionary<string, PhView>? views = null)
     {
         IReadOnlyList<FluidCircuit> circuits = FluidCircuitResolver.Resolve(document, catalog);
         List<PhChart> charts = [];
@@ -77,7 +90,7 @@ public static class PhDiagramBuilder
             List<(PhState, PhState)> processes = [];
             if (result is { Success: true })
                 CollectStates(document, catalog, result, streams, states, processes);
-            charts.Add(BuildChart(fluid.Key, states, processes));
+            charts.Add(BuildChart(fluid.Key, states, processes, views?.GetValueOrDefault(fluid.Key)));
         }
 
         return charts;
@@ -111,7 +124,7 @@ public static class PhDiagramBuilder
             new(node.Id, node.Name, port.Label, value.Enthalpy, value.Pressure, value.Temperature);
     }
 
-    private static PhChart BuildChart(string fluid, List<PhState> states, List<(PhState, PhState)> processes)
+    private static PhChart BuildChart(string fluid, List<PhState> states, List<(PhState, PhState)> processes, PhView? requested)
     {
         string label = FluidOptions.FluidLabel(fluid);
         FluidCurves curves;
@@ -144,22 +157,72 @@ public static class PhDiagramBuilder
             .ToList();
         double minH = enthalpies.Min(), maxH = enthalpies.Max();
         double span = Math.Max(maxH - minH, 1);
-        minH -= span * 0.08;
-        maxH += span * 0.3;
+        PhView defaultView = new(minH - span * 0.08, maxH + span * 0.3, minP, maxP);
+        PhView view = requested is null ? defaultView : Clamp(requested, defaultView, curves);
 
         return new PhChart
         {
             Fluid = fluid,
             Label = label,
-            MinPressure = minP,
-            MaxPressure = maxP,
-            MinEnthalpy = minH,
-            MaxEnthalpy = maxH,
-            Saturation = curves.Liquid.Concat(curves.Vapor.Reverse()).ToList(),
-            Isotherms = Isotherms(properties, curves, minP, maxP, minH, maxH),
+            View = view,
+            DefaultView = defaultView,
+            Saturation = Saturation(properties, curves, view, view != defaultView),
+            Isotherms = Isotherms(properties, curves, view.MinPressure, view.MaxPressure, view.MinEnthalpy, view.MaxEnthalpy),
             States = states,
             Processes = processes
         };
+    }
+
+    /// <summary>Keeps a zoomed range within sensible limits: not below the triple point, not far beyond the default range.</summary>
+    private static PhView Clamp(PhView view, PhView defaultView, FluidCurves curves)
+    {
+        double defaultSpan = defaultView.MaxEnthalpy - defaultView.MinEnthalpy;
+        double hSpan = Math.Clamp(view.MaxEnthalpy - view.MinEnthalpy, defaultSpan * 1e-4, defaultSpan * 4);
+        double hMid = (view.MinEnthalpy + view.MaxEnthalpy) / 2;
+        hMid = Math.Clamp(hMid, defaultView.MinEnthalpy - defaultSpan, defaultView.MaxEnthalpy + defaultSpan);
+
+        double floor = Math.Log(curves.TriplePressure * 1.01), ceiling = Math.Log(defaultView.MaxPressure * 20);
+        double defaultDecades = Math.Log(defaultView.MaxPressure) - Math.Log(defaultView.MinPressure);
+        double pSpan = Math.Clamp(Math.Log(view.MaxPressure / view.MinPressure), defaultDecades * 1e-4,
+            Math.Min(defaultDecades * 4, ceiling - floor));
+        double pLow = Math.Clamp(Math.Log(view.MinPressure), floor, ceiling - pSpan);
+
+        PhView clamped = new(hMid - hSpan / 2, hMid + hSpan / 2, Math.Exp(pLow), Math.Exp(pLow + pSpan));
+
+        // Return the request itself when nothing had to change, so it compares equal.
+        static bool Close(double a, double b) => Math.Abs(a - b) <= 1e-9 * Math.Max(1, Math.Abs(a));
+        return Close(clamped.MinEnthalpy, view.MinEnthalpy) && Close(clamped.MaxEnthalpy, view.MaxEnthalpy) &&
+               Close(clamped.MinPressure, view.MinPressure) && Close(clamped.MaxPressure, view.MaxPressure)
+            ? view
+            : clamped;
+    }
+
+    /// <summary>The dome from the cached curves, refined with extra points inside a zoomed range so it stays smooth.</summary>
+    private static List<PhPoint> Saturation(FluidProperties properties, FluidCurves curves, PhView view, bool refine)
+    {
+        List<PhPoint> liquid = [..curves.Liquid], vapor = [..curves.Vapor];
+        double top = Math.Min(view.MaxPressure, curves.CriticalPressure * 0.9999);
+        double bottom = Math.Max(view.MinPressure, curves.Liquid[0].Pressure);
+        if (refine && bottom < top)
+        {
+            foreach (double p in LogSpace(bottom, top, 60))
+            {
+                try
+                {
+                    liquid.Add(new PhPoint(properties.Get(UnitType.Enthalpy, UnitType.Pressure, p, UnitType.Quality, 0), p));
+                    vapor.Add(new PhPoint(properties.Get(UnitType.Enthalpy, UnitType.Pressure, p, UnitType.Quality, 1), p));
+                }
+                catch (Exception)
+                {
+                    // Same as the cached curve: skip pressures CoolProp cannot handle.
+                }
+            }
+
+            liquid.Sort((a, b) => a.Pressure.CompareTo(b.Pressure));
+            vapor.Sort((a, b) => a.Pressure.CompareTo(b.Pressure));
+        }
+
+        return [..liquid, ..Enumerable.Reverse(vapor)];
     }
 
     private static FluidCurves ComputeCurves(string fluid)
@@ -199,18 +262,16 @@ public static class PhDiagramBuilder
     private static List<PhIsotherm> Isotherms(FluidProperties properties, FluidCurves curves,
         double minP, double maxP, double minH, double maxH)
     {
-        double tMin, tMax;
-        try
-        {
-            tMin = Math.Max(curves.TripleTemperature + 1, properties.GetSaturationTemperature(Math.Max(minP, curves.TriplePressure * 1.01)));
-            tMax = Math.Max(
-                properties.Get(UnitType.Temperature, UnitType.Enthalpy, maxH, UnitType.Pressure, minP),
-                properties.Get(UnitType.Temperature, UnitType.Enthalpy, maxH, UnitType.Pressure, maxP));
-        }
-        catch (Exception)
-        {
+        // The coldest visible temperature is on the left edge and the hottest on the right edge.
+        List<double> left = EdgeTemperatures(properties, minH, minP, maxP);
+        List<double> right = EdgeTemperatures(properties, maxH, minP, maxP);
+        if (right.Count == 0)
             return [];
-        }
+        // Left of the coldest liquid the fluid would be solid; start at the triple point then.
+        double tMin = Math.Max(curves.TripleTemperature + 1, left.Count > 0 ? left.Min() : double.MinValue);
+        double tMax = right.Max();
+        if (tMax <= tMin)
+            return [];
 
         double step = NiceStep((tMax - tMin) / 8);
         List<PhIsotherm> isotherms = [];
@@ -222,6 +283,24 @@ public static class PhDiagramBuilder
         }
 
         return isotherms;
+    }
+
+    private static List<double> EdgeTemperatures(FluidProperties properties, double h, double minP, double maxP)
+    {
+        List<double> temperatures = [];
+        foreach (double p in LogSpace(minP, maxP, 7))
+        {
+            try
+            {
+                temperatures.Add(properties.Get(UnitType.Temperature, UnitType.Enthalpy, h, UnitType.Pressure, p));
+            }
+            catch (Exception)
+            {
+                // Outside the valid range, e.g. below the triple point.
+            }
+        }
+
+        return temperatures;
     }
 
     /// <summary>Points from high to low pressure. Below the critical temperature the line crosses the dome at the saturation pressure.</summary>

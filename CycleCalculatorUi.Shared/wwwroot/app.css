@@ -390,6 +390,13 @@ kbd {
 .ph-chart .tooltip rect { fill: var(--surface); stroke: var(--border-strong); filter: drop-shadow(0 2px 6px rgb(16 24 40 / 15%)); }
 .ph-chart .tooltip text { fill: var(--text); }
 .ph-chart .tooltip .tt-title { font-weight: 600; }
+.ph-header button.small { height: 24px; padding: 0 8px; font-size: 12px; }
+.ph-chart { cursor: grab; touch-action: none; user-select: none; }
+.ph-chart.panning { cursor: grabbing; }
+.ph-chart .hit { cursor: pointer; }
+/* While a zoom or pan preview is shown, strokes keep their width and labels tied to the old view are hidden. */
+.ph-chart [data-zoom-layer] path, .ph-chart [data-zoom-layer] line { vector-effect: non-scaling-stroke; }
+.ph-chart.previewing .tooltip, .ph-chart.previewing .iso-label-wrap { display: none; }
 
 /* ---------- Blazor ---------- */
 
