@@ -47,6 +47,10 @@
                                     <option value="@option.Value">@option.Label</option>
                                 }
                             </select>
+                            @if (parameter.Help is not null)
+                            {
+                                <div class="field-help">@parameter.Help</div>
+                            }
                         </div>
                     }
                     else if (parameter.Kind == ParameterKind.Coefficients)

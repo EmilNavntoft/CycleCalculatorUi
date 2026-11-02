@@ -526,13 +526,29 @@ public static class BuiltInComponents
                 new ParameterDescriptor("maxEfficiency", "Max. effectiveness", ParameterKind.Number)
                 {
                     Unit = "-", Optional = true, Min = 0, Max = 1, IsActive = Controlled
+                },
+                new ParameterDescriptor("controlSign", "Control direction", ParameterKind.Choice)
+                {
+                    DefaultChoice = "auto",
+                    Options =
+                    [
+                        new ChoiceOption("auto", "Automatic"),
+                        new ChoiceOption("positive", "Higher effectiveness raises temperature (+1)"),
+                        new ChoiceOption("negative", "Higher effectiveness lowers temperature (−1)")
+                    ],
+                    IsActive = Controlled,
+                    Help = "Sign of the measured temperature's response to the effectiveness. " +
+                           "Automatic lets the solver determine it from the initial guess."
                 }
             ],
             Create = c => new FixedEfficiencyHeatExchanger(c.Name, c.Fluid(0), c.Backend(0), c.Fluid(1), c.Backend(1),
                 efficiency: c.OptionalNumber("efficiency"),
                 targetTemperatureSetpoint: c.OptionalNumber("targetTemperatureSetpoint"),
                 maxEfficiency: c.OptionalNumber("maxEfficiency"),
-                minEfficiency: c.OptionalNumber("minEfficiency")),
+                minEfficiency: c.OptionalNumber("minEfficiency"),
+                controlSign: Controlled(c.Node)
+                    ? c.Choice("controlSign") switch { "positive" => 1, "negative" => -1, _ => null }
+                    : null),
             GetPort = Typed.Ports<FixedEfficiencyHeatExchanger>(("Inlet", h => h.Inlet), ("Outlet", h => h.Outlet),
                 ("Inlet2", h => h.Inlet2), ("Outlet2", h => h.Outlet2)),
             GetSignalPort = Typed.SignalPorts<FixedEfficiencyHeatExchanger>(("Signal", h => h.SignalPort)),
