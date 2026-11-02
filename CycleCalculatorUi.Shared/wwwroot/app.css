@@ -358,6 +358,38 @@ kbd {
 .bottom-panel .count { min-width: 18px; padding: 0 5px; border-radius: 999px; background: var(--surface-2); font-size: 11px; text-align: center; }
 .bottom-panel .count.error { background: var(--danger-soft); color: var(--danger); }
 .bottom-panel .tab-body { height: 220px; padding: 4px 14px 12px; overflow: auto; }
+.bottom-panel .tab-body.tall { height: 400px; }
+
+/* ---------- p-h diagram ---------- */
+
+.ph-view { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.ph-header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 2px 0 6px; font-size: 12px; }
+.ph-header .spacer { flex: 1; }
+.segmented { display: inline-flex; padding: 2px; border-radius: 6px; background: var(--surface-2); }
+.segmented button { height: 22px; padding: 0 10px; border: 0; border-radius: 4px; background: none; color: var(--muted); font-size: 12px; }
+.segmented button.active { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: var(--shadow); }
+.ph-key { display: inline-flex; gap: 12px; color: var(--muted); }
+.ph-key > span { display: inline-flex; align-items: center; gap: 5px; }
+.key-line { display: inline-block; width: 16px; height: 0; border-top: 2px solid var(--text); }
+.key-line.iso { border-top: 1px solid var(--muted); }
+.key-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.ph-chart { flex: 1; min-height: 0; width: 100%; font-size: 11px; font-variant-numeric: tabular-nums; }
+.ph-chart .grid { stroke: var(--grid); stroke-width: 0.5; }
+.ph-chart .frame { fill: none; stroke: var(--border-strong); stroke-width: 1; }
+.ph-chart .tick, .ph-chart .iso-label { fill: var(--muted); }
+.ph-chart .iso-label { font-size: 10px; }
+.ph-chart .axis-title { fill: var(--muted); font-size: 11.5px; }
+.ph-chart .dome-fill { fill: var(--liquid); fill-opacity: 0.35; stroke: none; }
+.ph-chart .dome { fill: none; stroke: var(--text); stroke-width: 1.5; stroke-linejoin: round; }
+.ph-chart .isotherm { fill: none; stroke: var(--muted); stroke-width: 0.8; stroke-opacity: 0.6; stroke-linejoin: round; }
+.ph-chart .process { stroke: var(--accent); stroke-width: 2; stroke-linecap: round; }
+.ph-chart .state { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+.ph-chart .state.selected { fill: var(--surface); stroke: var(--accent); stroke-width: 2.5; }
+.ph-chart .hit { fill: transparent; cursor: pointer; }
+.ph-chart.stale .process, .ph-chart.stale .state { opacity: 0.45; }
+.ph-chart .tooltip rect { fill: var(--surface); stroke: var(--border-strong); filter: drop-shadow(0 2px 6px rgb(16 24 40 / 15%)); }
+.ph-chart .tooltip text { fill: var(--text); }
+.ph-chart .tooltip .tt-title { font-weight: 600; }
 
 /* ---------- Blazor ---------- */
 

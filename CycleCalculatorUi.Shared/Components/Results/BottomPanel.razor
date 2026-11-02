@@ -15,6 +15,9 @@
         <button type="button" role="tab" class="@(_tab == Tab.Results && _open ? "active" : "")" @onclick="() => Toggle(Tab.Results)">
             Results
         </button>
+        <button type="button" role="tab" class="@(_tab == Tab.PhDiagram && _open ? "active" : "")" @onclick="() => Toggle(Tab.PhDiagram)">
+            p-h diagram
+        </button>
         <span class="spacer"></span>
         <button type="button" class="icon" aria-label="@(_open ? "Collapse" : "Expand")" @onclick="() => _open = !_open">
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="@(_open ? "M4 6l4 4 4-4" : "M4 10l4-4 4 4")"/></svg>
@@ -22,7 +25,7 @@
     </div>
     @if (_open)
     {
-        <div class="tab-body">
+        <div class="tab-body @(_tab == Tab.PhDiagram ? "tall" : "")">
             @if (_tab == Tab.Problems)
             {
                 @if (SolverFailure is { } failure)
@@ -48,6 +51,10 @@
                         }
                     </ul>
                 }
+            }
+            else if (_tab == Tab.PhDiagram)
+            {
+                <PhDiagramView State="State"/>
             }
             else if (State.Result is not { Success: true } result)
             {
@@ -90,7 +97,8 @@
     private enum Tab
     {
         Problems,
-        Results
+        Results,
+        PhDiagram
     }
 
     [Parameter, EditorRequired] public EditorState State { get; set; } = null!;
@@ -115,7 +123,9 @@
     /// <summary>Opens the given tab, e.g. after a calculation.</summary>
     public void Show(bool results)
     {
-        _tab = results ? Tab.Results : Tab.Problems;
+        // Stay on the p-h diagram after a successful calculation; it shows the new states.
+        if (!(results && _open && _tab == Tab.PhDiagram))
+            _tab = results ? Tab.Results : Tab.Problems;
         _open = true;
         StateHasChanged();
     }

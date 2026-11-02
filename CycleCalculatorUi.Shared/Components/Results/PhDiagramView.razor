@@ -1,0 +1,194 @@
+@* Log p-h diagram of each fluid in the system, with the solved port states and processes drawn on top. *@
+@using CycleCalculatorUi.Core.Charts
+
+<div class="ph-view">
+    <div class="ph-header">
+        @if (_charts.Count > 1)
+        {
+            <div class="segmented" role="tablist" aria-label="Fluid">
+                @foreach (PhChart chart in _charts)
+                {
+                    <button type="button" role="tab" class="@(chart == Current ? "active" : "")" @onclick="() => _fluid = chart.Fluid">@chart.Label</button>
+                }
+            </div>
+        }
+        else if (Current is not null)
+        {
+            <strong>@Current.Label</strong>
+        }
+        <span class="ph-key">
+            <span><i class="key-line dome"></i>Saturation</span>
+            <span><i class="key-line iso"></i>Isotherms °C</span>
+            <span><i class="key-dot"></i>Port states</span>
+        </span>
+        <span class="spacer"></span>
+        <span class="muted">@Hint</span>
+    </div>
+
+    @if (Current is null)
+    {
+        <p class="muted">Add components to see the p-h diagram of their fluid.</p>
+    }
+    else if (Current.Error is { } error)
+    {
+        <p class="muted">@error</p>
+    }
+    else
+    {
+        PhChart c = Current;
+        <svg class="ph-chart @(State.IsResultStale ? "stale" : "")" viewBox="0 0 @W @H" preserveAspectRatio="xMidYMid meet"
+             role="img" aria-label="Log p-h diagram of @c.Label">
+            <defs>
+                <clipPath id="ph-clip"><rect x="@L" y="@T" width="@PlotW" height="@PlotH"/></clipPath>
+            </defs>
+
+            @* Grid and axes *@
+            @foreach (double p in PressureTicks(c))
+            {
+                double y = Y(c, p);
+                <g>
+                    <line class="grid" x1="@L" x2="@(L + PlotW)" y1="@N(y)" y2="@N(y)"/>
+                    <text class="tick" x="@(L - 6)" y="@N(y + 3.5)" text-anchor="end">@Tick(p)</text>
+                </g>
+            }
+            @foreach (double h in EnthalpyTicks(c))
+            {
+                double x = X(c, h);
+                <g>
+                    <line class="grid" x1="@N(x)" x2="@N(x)" y1="@T" y2="@(T + PlotH)"/>
+                    <text class="tick" x="@N(x)" y="@(T + PlotH + 14)" text-anchor="middle">@Tick(h)</text>
+                </g>
+            }
+            <rect class="frame" x="@L" y="@T" width="@PlotW" height="@PlotH"/>
+            <text class="axis-title" x="@(L + PlotW / 2)" y="@(H - 4)" text-anchor="middle">Specific enthalpy h [kJ/kg]</text>
+            <text class="axis-title" transform="translate(13 @(T + PlotH / 2)) rotate(-90)" text-anchor="middle">Pressure p [bar]</text>
+
+            <g clip-path="url(#ph-clip)">
+                <path class="dome-fill" d="@Path(c, c.Saturation)Z"/>
+                @foreach (PhIsotherm iso in c.Isotherms)
+                {
+                    <path class="isotherm" d="@Path(c, iso.Points)"/>
+                }
+                <path class="dome" d="@Path(c, c.Saturation)"/>
+                @foreach ((PhState from, PhState to) in c.Processes)
+                {
+                    <line class="process" x1="@N(X(c, from.Enthalpy))" y1="@N(Y(c, from.Pressure))" x2="@N(X(c, to.Enthalpy))" y2="@N(Y(c, to.Pressure))"/>
+                }
+                @foreach (PhState s in c.States)
+                {
+                    bool selected = State.SelectedNodeIds.Contains(s.NodeId);
+                    <circle class="state @(selected ? "selected" : "")" cx="@N(X(c, s.Enthalpy))" cy="@N(Y(c, s.Pressure))" r="@(selected ? 5.5 : 4)"/>
+                }
+                @* Hit targets larger than the marks, drawn last so they are on top. *@
+                @foreach (PhState s in c.States)
+                {
+                    <circle class="hit" cx="@N(X(c, s.Enthalpy))" cy="@N(Y(c, s.Pressure))" r="10"
+                            @onmouseover="() => _hover = s" @onmouseout="() => _hover = null" @onclick="() => State.Select(s.NodeId)"/>
+                }
+            </g>
+
+            @* Isotherm labels along the top edge, at the high-pressure end of each line. *@
+            @foreach (PhIsotherm iso in c.Isotherms)
+            {
+                double x = X(c, iso.Points[0].Enthalpy);
+                if (x > L + 8 && x < L + PlotW - 8)
+                {
+                    <g><text class="iso-label" x="@N(x)" y="@(T + 11)" text-anchor="middle">@Tick(iso.Temperature)</text></g>
+                }
+            }
+
+            @if (_hover is { } hover && c.States.Contains(hover))
+            {
+                double x = X(c, hover.Enthalpy), y = Y(c, hover.Pressure);
+                string title = $"{hover.NodeName} · {hover.PortLabel}";
+                string values = $"p {Format.Pressure(hover.Pressure)} bar   T {Format.Temperature(hover.Temperature)} °C   h {Format.Enthalpy(hover.Enthalpy)} kJ/kg";
+                double width = Math.Max(title.Length, values.Length) * 5.7 + 16;
+                double tx = x + 12 + width > L + PlotW ? x - 12 - width : x + 12;
+                double ty = Math.Clamp(y - 40, T, T + PlotH - 38);
+                <g class="tooltip" pointer-events="none">
+                    <rect x="@N(tx)" y="@N(ty)" width="@N(width)" height="38" rx="6"/>
+                    <text x="@N(tx + 8)" y="@N(ty + 15)" class="tt-title">@title</text>
+                    <text x="@N(tx + 8)" y="@N(ty + 30)">@values</text>
+                </g>
+            }
+        </svg>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public EditorState State { get; set; } = null!;
+
+    // Chart geometry in SVG user units.
+    private const double W = 1150, H = 350, L = 58, T = 8, R = 14, B = 38;
+    private const double PlotW = W - L - R, PlotH = H - T - B;
+
+    private IReadOnlyList<PhChart> _charts = [];
+    private string? _fluid;
+    private PhState? _hover;
+    private object? _builtFor;
+
+    private PhChart? Current => _charts.FirstOrDefault(c => c.Fluid == _fluid) ?? _charts.FirstOrDefault();
+
+    private string Hint => State.Result switch
+    {
+        null => "Calculate to plot the cycle.",
+        { Success: false } => "The last calculation failed; no states to plot.",
+        _ when State.IsResultStale => "States are from an older calculation.",
+        _ => "Hover a point for values, click to select its component."
+    };
+
+    protected override void OnParametersSet()
+    {
+        // Rebuild only when the result or the set of fluids changes; the fluid curves themselves are cached.
+        string fluids = string.Join("|", State.Circuits.Select(c => c.Fluid.Fluid).Distinct());
+        var key = (State.Result, fluids, State.IsResultStale, State.Document);
+        if (Equals(key, _builtFor))
+            return;
+        _builtFor = key;
+        _charts = PhDiagramBuilder.Build(State.Document, State.Catalog, State.Result);
+        _hover = null;
+    }
+
+    private static double X(PhChart c, double h) => L + (h - c.MinEnthalpy) / (c.MaxEnthalpy - c.MinEnthalpy) * PlotW;
+
+    private static double Y(PhChart c, double p) =>
+        T + (Math.Log(c.MaxPressure) - Math.Log(p)) / (Math.Log(c.MaxPressure) - Math.Log(c.MinPressure)) * PlotH;
+
+    private static string N(double value) => value.ToString("0.#", CultureInfo.InvariantCulture);
+
+    private static string Tick(double value) => value.ToString(Math.Abs(value) >= 1 || value == 0 ? "0.##" : "0.###", CultureInfo.InvariantCulture);
+
+    private static string Path(PhChart c, IEnumerable<PhPoint> points)
+    {
+        System.Text.StringBuilder path = new();
+        foreach (PhPoint point in points)
+        {
+            if (point.Pressure <= 0 || !double.IsFinite(point.Enthalpy))
+                continue;
+            path.Append(path.Length == 0 ? 'M' : 'L').Append(N(X(c, point.Enthalpy))).Append(' ').Append(N(Y(c, point.Pressure)));
+        }
+
+        return path.ToString();
+    }
+
+    /// <summary>1, 2 and 5 times each power of ten inside the range (only the powers of ten when the range is wide).</summary>
+    private static IEnumerable<double> PressureTicks(PhChart c)
+    {
+        int first = (int)Math.Floor(Math.Log10(c.MinPressure)), last = (int)Math.Ceiling(Math.Log10(c.MaxPressure));
+        double[] steps = last - first > 4 ? [1] : [1, 2, 5];
+        for (int d = first; d <= last; d++)
+        foreach (double m in steps)
+        {
+            double value = m * Math.Pow(10, d);
+            if (value >= c.MinPressure && value <= c.MaxPressure)
+                yield return value;
+        }
+    }
+
+    private static IEnumerable<double> EnthalpyTicks(PhChart c)
+    {
+        double step = PhDiagramBuilder.NiceStep((c.MaxEnthalpy - c.MinEnthalpy) / 9);
+        for (double h = Math.Ceiling(c.MinEnthalpy / step) * step; h <= c.MaxEnthalpy; h += step)
+            yield return Math.Round(h, 9);
+    }
+}
