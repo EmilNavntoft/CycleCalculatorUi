@@ -542,7 +542,8 @@ public static class BuiltInComponents
                     IsActive = Controlled,
                     Help = "Sign of the measured temperature's response to the effectiveness. " +
                            "Automatic lets the solver determine it from the initial guess."
-                }
+                },
+                .. ProfileModelParameters()
             ],
             Create = c => new FixedEfficiencyHeatExchanger(c.Name, c.Fluid(0), c.Backend(0), c.Fluid(1), c.Backend(1),
                 efficiency: c.OptionalNumber("efficiency"),
@@ -551,7 +552,9 @@ public static class BuiltInComponents
                 minEfficiency: c.OptionalNumber("minEfficiency"),
                 controlSign: Controlled(c.Node)
                     ? c.Choice("controlSign") switch { "positive" => 1, "negative" => -1, _ => null }
-                    : null),
+                    : null,
+                model: ProfileModel(c),
+                singlePhaseSegments: SinglePhaseSegments(c)),
             EnergyKind = EnergyKind.Exchanger,
             GetPort = Typed.Ports<FixedEfficiencyHeatExchanger>(("Inlet", h => h.Inlet), ("Outlet", h => h.Outlet),
                 ("Inlet2", h => h.Inlet2), ("Outlet2", h => h.Outlet2)),
@@ -565,6 +568,36 @@ public static class BuiltInComponents
         };
     }
 
+    private static bool UsesMovingBoundary(NodeModel node) => ChoiceIs(node, "profileModel", "movingBoundary");
+
+    /// <summary>Choice of temperature profile model shared by the counter-current heat exchangers.</summary>
+    private static ParameterDescriptor[] ProfileModelParameters() =>
+    [
+        new ParameterDescriptor("profileModel", "Profile model", ParameterKind.Choice)
+        {
+            DefaultChoice = "discretized",
+            Options = [new ChoiceOption("discretized", "Discretized"), new ChoiceOption("movingBoundary", "Moving boundary")],
+            Help = "Discretized evaluates both fluids at fixed points along the exchanger for every trial heat flow. " +
+                   "Moving boundary splits each stream into zones at its phase changes and evaluates the fluids only " +
+                   "to build those zones, which needs far fewer property calls, especially with the HEOS backend."
+        },
+        new ParameterDescriptor("singlePhaseSegments", "Single-phase segments", ParameterKind.Number)
+        {
+            Unit = "-", DefaultNumber = MovingBoundaryProfile.DefaultSinglePhaseSegments,
+            Min = 1, Max = MovingBoundaryProfile.MaximumSinglePhaseSegments, IsActive = UsesMovingBoundary,
+            Help = "Number of segments each single-phase zone is split into, to follow a changing heat capacity. " +
+                   "More segments are more accurate (most noticeable for supercritical CO2) but slower."
+        }
+    ];
+
+    private static HeatExchangerModel ProfileModel(BuildContext c) =>
+        UsesMovingBoundary(c.Node) ? HeatExchangerModel.MovingBoundary : HeatExchangerModel.Discretized;
+
+    private static int SinglePhaseSegments(BuildContext c) =>
+        UsesMovingBoundary(c.Node)
+            ? (int)Math.Round(c.Number("singlePhaseSegments"))
+            : MovingBoundaryProfile.DefaultSinglePhaseSegments;
+
     public static ComponentDescriptor FixedUaHeatExchanger() => new()
     {
         TypeId = nameof(CycleCalculator.CycleModel.Model.FixedUaHeatExchanger),
@@ -577,9 +610,11 @@ public static class BuiltInComponents
         Ports = CounterCurrent(),
         Parameters =
         [
-            new ParameterDescriptor("ua", "UA", ParameterKind.Number) { Unit = "kW/K", DefaultNumber = 20, Min = 0 }
+            new ParameterDescriptor("ua", "UA", ParameterKind.Number) { Unit = "kW/K", DefaultNumber = 20, Min = 0 },
+            .. ProfileModelParameters()
         ],
-        Create = c => new FixedUaHeatExchanger(c.Name, c.Fluid(0), c.Backend(0), c.Fluid(1), c.Backend(1), c.Number("ua")),
+        Create = c => new FixedUaHeatExchanger(c.Name, c.Fluid(0), c.Backend(0), c.Fluid(1), c.Backend(1), c.Number("ua"),
+            ProfileModel(c), SinglePhaseSegments(c)),
         EnergyKind = EnergyKind.Exchanger,
         GetPort = Typed.Ports<FixedUaHeatExchanger>(("Inlet", h => h.Inlet), ("Outlet", h => h.Outlet),
             ("Inlet2", h => h.Inlet2), ("Outlet2", h => h.Outlet2)),
