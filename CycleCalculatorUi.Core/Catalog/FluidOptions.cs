@@ -10,7 +10,7 @@ public static class FluidOptions
         new(CoolPropFluids.CarbonDioxide, "CO₂ (R744)"),
         new(CoolPropFluids.R134a, "R134a"),
         new("R290", "Propane (R290)"),
-        new("R717", "Ammonia (R717)"),
+        new(CoolPropFluids.Ammonia, "Ammonia (R717)"),
         new("R1234yf", "R1234yf"),
         new("R32", "R32"),
         new("R410A", "R410A"),
