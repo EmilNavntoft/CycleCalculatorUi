@@ -95,6 +95,7 @@ public static class BuiltInComponents
             }
         ],
         Create = c => new TemperatureBoundary(c.Name, c.Fluid(), c.Backend(), c.Number("outletTemperature")),
+        EnergyKind = EnergyKind.Heat,
         GetPort = Typed.Ports<TemperatureBoundary>(("Inlet", t => t.Inlet), ("Outlet", t => t.Outlet))
     };
 
@@ -124,6 +125,7 @@ public static class BuiltInComponents
         ],
         Create = c => new SimpleCompressor(c.Name, c.Fluid(), c.Backend(),
             c.Number("isentropicEfficiency"), c.Number("dischargePressure"), c.OptionalNumber("massFlow")),
+        EnergyKind = EnergyKind.Power,
         GetPort = Typed.Ports<SimpleCompressor>(("Inlet", s => s.Inlet), ("Outlet", s => s.Outlet))
     };
 
@@ -364,6 +366,7 @@ public static class BuiltInComponents
                         : CompressorDischargeCondition.AtSaturationTemperature(c.Number("dischargeSaturationTemperature")),
                     current is null ? null : new En12900Polynomial(current, superheat));
             },
+            EnergyKind = EnergyKind.Power,
             GetPort = Typed.Ports<En12900Compressor>(("Inlet", s => s.Inlet), ("Outlet", s => s.Outlet)),
             ReadOutputs = Typed.Outputs<En12900Compressor>(compressor =>
             {
@@ -549,6 +552,7 @@ public static class BuiltInComponents
                 controlSign: Controlled(c.Node)
                     ? c.Choice("controlSign") switch { "positive" => 1, "negative" => -1, _ => null }
                     : null),
+            EnergyKind = EnergyKind.Exchanger,
             GetPort = Typed.Ports<FixedEfficiencyHeatExchanger>(("Inlet", h => h.Inlet), ("Outlet", h => h.Outlet),
                 ("Inlet2", h => h.Inlet2), ("Outlet2", h => h.Outlet2)),
             GetSignalPort = Typed.SignalPorts<FixedEfficiencyHeatExchanger>(("Signal", h => h.SignalPort)),
@@ -576,6 +580,7 @@ public static class BuiltInComponents
             new ParameterDescriptor("ua", "UA", ParameterKind.Number) { Unit = "kW/K", DefaultNumber = 20, Min = 0 }
         ],
         Create = c => new FixedUaHeatExchanger(c.Name, c.Fluid(0), c.Backend(0), c.Fluid(1), c.Backend(1), c.Number("ua")),
+        EnergyKind = EnergyKind.Exchanger,
         GetPort = Typed.Ports<FixedUaHeatExchanger>(("Inlet", h => h.Inlet), ("Outlet", h => h.Outlet),
             ("Inlet2", h => h.Inlet2), ("Outlet2", h => h.Outlet2)),
         ReadOutputs = Typed.Outputs<FixedUaHeatExchanger>(h => [new OutputValue("Heat flow", h.HeatTransferRate, "kW")])
@@ -612,6 +617,7 @@ public static class BuiltInComponents
         Create = c => new FixedUaEvaporator(c.Name, c.Fluid(0), c.Backend(0), c.Fluid(1), c.Backend(1),
             c.Number("ua"), c.Number("superheat"), c.Number("secondaryInletTemperature"),
             c.Number("secondaryOutletTemperature"), c.Number("secondaryPressure")),
+        EnergyKind = EnergyKind.Heat,
         GetPort = Typed.Ports<FixedUaEvaporator>(("Inlet", e => e.Inlet), ("Outlet", e => e.Outlet)),
         ReadOutputs = Typed.Outputs<FixedUaEvaporator>(e =>
         [

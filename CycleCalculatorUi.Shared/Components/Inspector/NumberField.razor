@@ -1,6 +1,13 @@
 @* Numeric input with unit. Commits on change (blur or Enter); an empty optional field means "free". *@
 <div class="field @(Error is not null || _invalid ? "invalid" : "")">
-    <label for="@_id">@Label</label>
+    @if (LabelAction is null)
+    {
+        <label for="@_id">@Label</label>
+    }
+    else
+    {
+        <div class="field-label-row"><label for="@_id">@Label</label>@LabelAction</div>
+    }
     <div class="input-with-unit">
         <input id="@_id" type="text" inputmode="decimal" autocomplete="off" spellcheck="false"
                value="@_text" placeholder="@(Optional ? "free" : "")"
@@ -32,6 +39,9 @@
     [Parameter] public string? Help { get; set; }
     [Parameter] public string? Error { get; set; }
     [Parameter] public EventCallback<double?> ValueChanged { get; set; }
+
+    /// <summary>Optional small button shown at the end of the label row.</summary>
+    [Parameter] public RenderFragment? LabelAction { get; set; }
 
     private readonly string _id = "f" + Guid.NewGuid().ToString("N")[..8];
     private string _text = "";

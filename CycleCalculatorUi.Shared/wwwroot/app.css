@@ -29,6 +29,9 @@
     --signal: #8a96a3;
     --shadow: 0 1px 2px rgb(16 24 40 / 6%), 0 4px 12px rgb(16 24 40 / 6%);
     --radius: 8px;
+    /* Categorical chart series, in fixed order (validated for colour-vision deficiencies). */
+    --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100;
+    --series-5: #e87ba4; --series-6: #008300; --series-7: #6250d6; --series-8: #e34948;
     color-scheme: light;
 }
 
@@ -60,6 +63,8 @@
         --fluid-air: #9aa6b2;
         --fluid-other: #e39a4f;
         --signal: #7d8996;
+        --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
+        --series-5: #d55181; --series-6: #008300; --series-7: #9085e9; --series-8: #e66767;
         color-scheme: dark;
     }
 }
@@ -463,3 +468,74 @@ textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3
 }
 .file-button:hover { background: var(--surface-2); border-color: var(--border); }
 .file-button input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+/* ---------- energy totals ---------- */
+
+.energy-totals { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 4px 0 8px; font-variant-numeric: tabular-nums; }
+.energy-totals > div { display: flex; flex-direction: column; }
+.energy-totals dt { color: var(--muted); font-size: 11px; }
+.energy-totals dd { margin: 0; font-size: 15px; font-weight: 600; }
+.energy-totals small { color: var(--muted); font-size: 11px; font-weight: 400; }
+.energy-totals.stale dd { color: var(--muted); font-style: italic; }
+
+/* ---------- parametric study ---------- */
+
+.field-label-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 3px; }
+.field-label-row label { margin-bottom: 0; }
+button.study-add { height: 18px; padding: 0 5px; border-color: transparent; background: none; color: var(--muted); font-size: 13px; line-height: 1; }
+button.study-add:hover:not(:disabled) { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
+.study-flag { padding: 0 6px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 10.5px; font-weight: 600; }
+.study-icon { color: var(--accent); }
+
+.study { display: flex; gap: 16px; height: 100%; min-height: 0; }
+.study-setup { width: 360px; flex: none; overflow-y: auto; padding-right: 8px; border-right: 1px solid var(--border); }
+.study-setup section { margin-bottom: 14px; }
+.study-setup h3 { margin: 4px 0 6px; font-size: 12px; font-weight: 650; }
+.study-setup .small, .study .small { font-size: 11.5px; margin: 0 0 6px; }
+.study-variable { margin-bottom: 8px; padding: 6px 8px 0; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2); }
+.study-row-title { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 24px; font-size: 12px; font-weight: 550; }
+.study-row-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.study-row-title button.icon.small { width: 22px; height: 22px; }
+.study-range { display: grid; grid-template-columns: 1fr 1fr 56px 84px; gap: 6px; }
+.study-range .field:nth-child(3) .input-with-unit input { padding-right: 6px; }
+.study-range select { padding-right: 4px; }
+.study-range .field { margin-bottom: 6px; }
+.study-range .input-with-unit input { padding-right: 40px; }
+.study-run .toggle { margin: 0 0 8px; }
+.study-run-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.study-run progress { width: 100%; margin-top: 8px; accent-color: var(--accent); }
+.study-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; padding: 6px 8px; border-radius: 6px; background: var(--warn-soft); color: var(--warn); font-size: 12px; }
+
+.study-results { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
+.study-results .ph-header button.small { height: 24px; padding: 0 8px; font-size: 12px; }
+.inline-field { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.inline-field select { width: auto; max-width: 260px; height: 26px; }
+.study-table-wrap { flex: 1; min-height: 0; overflow: auto; }
+.study-table th { position: sticky; top: 0; background: var(--surface); white-space: normal; vertical-align: bottom; }
+.study-table th small { display: block; margin: 0; }
+.result-table.study-table th.variable, .result-table.study-table td.variable { background: var(--surface-2); text-align: right; }
+.study-table tr.failed td { color: var(--muted); }
+.study-table td.failure { color: var(--danger); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 1px; }
+.study-table button.small { height: 22px; padding: 0 6px; font-size: 11.5px; }
+.study-table tbody tr:hover { background: var(--accent-soft); }
+
+.study-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 0 0 4px; font-size: 12px; color: var(--text); }
+.study-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.key-swatch { display: inline-block; width: 14px; height: 3px; border-radius: 2px; }
+.study-chart { flex: 1; min-height: 0; width: 100%; font-size: 11px; font-variant-numeric: tabular-nums; }
+.study-chart .grid { stroke: var(--grid); stroke-width: 0.5; }
+.study-chart .axis { stroke: var(--border-strong); stroke-width: 1; }
+.study-chart .tick, .study-chart .axis-title { fill: var(--muted); }
+.study-chart .axis-title { font-size: 11.5px; }
+.study-chart .series-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.study-chart .series-dot { stroke: var(--surface); stroke-width: 2; }
+.study-chart .crosshair { stroke: var(--border-strong); stroke-width: 1; stroke-dasharray: 3 3; pointer-events: none; }
+.study-chart .hit { fill: transparent; cursor: default; }
+.study-chart .tooltip rect { fill: var(--surface); stroke: var(--border-strong); filter: drop-shadow(0 2px 6px rgb(16 24 40 / 15%)); }
+.study-chart .tooltip text { fill: var(--text); }
+.study-chart .tooltip .tt-title { font-weight: 600; }
+
+@media (max-width: 900px) {
+    .study { flex-direction: column; }
+    .study-setup { width: auto; border-right: 0; }
+}

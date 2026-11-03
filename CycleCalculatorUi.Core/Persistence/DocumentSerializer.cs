@@ -51,18 +51,21 @@ public static class DocumentSerializer
 
     /// <summary>
     /// A hash of everything that affects the calculation. Layout (position, rotation, flip) is left out,
-    /// so moving components does not make results stale.
+    /// so moving components does not make results stale. The energy roles and the study setup only change how
+    /// results are summarised, so they are left out too.
     /// </summary>
     public static string Fingerprint(SystemDocument document)
     {
         SystemDocument copy = Clone(document);
         copy.Name = "";
+        copy.Study = null;
         foreach (NodeModel node in copy.Nodes)
         {
             node.X = 0;
             node.Y = 0;
             node.Rotation = 0;
             node.FlipHorizontal = false;
+            node.EnergyRole = default;
         }
 
         foreach (ConnectionModel connection in copy.Connections)

@@ -66,7 +66,20 @@
                         <NumberField @key="(node.Id, parameter.Key)" Label="@parameter.Label" Unit="@parameter.Unit"
                                      Optional="parameter.Optional" Help="@parameter.Help" Error="@StripName(error, node)"
                                      Value="node.Numbers.GetValueOrDefault(parameter.Key, parameter.DefaultNumber)"
-                                     ValueChanged="v => State.SetNumber(node.Id, parameter.Key, v)"/>
+                                     ValueChanged="v => State.SetNumber(node.Id, parameter.Key, v)">
+                            <LabelAction>
+                                @if (InStudy(node, parameter))
+                                {
+                                    <span class="study-flag" title="Varied in the parametric study">in study</span>
+                                }
+                                else
+                                {
+                                    <button type="button" class="study-add" title="Vary this parameter in a parametric study"
+                                            aria-label="Add @parameter.Label to the parametric study"
+                                            @onclick="() => State.AddStudyVariable(node.Id, parameter.Key)">⊕</button>
+                                }
+                            </LabelAction>
+                        </NumberField>
                     }
                 }
             </section>
@@ -83,6 +96,31 @@
             }
             <div class="field-help">Applies to every component connected to this @(descriptor.Streams.Count > 1 ? "stream" : "component").</div>
         </section>
+
+        @if (EnergyBalance.DescribeAuto(State.Document, State.Catalog, node) is var auto && (auto is not null || node.EnergyRole != EnergyRole.Auto))
+        {
+            <section class="inspector-section">
+                <h3>Energy balance</h3>
+                <div class="field">
+                    <label for="energy-role">Counts as</label>
+                    <select id="energy-role" value="@node.EnergyRole"
+                            @onchange="e => State.SetEnergyRole(node.Id, Enum.Parse<EnergyRole>(e.Value?.ToString() ?? nameof(EnergyRole.Auto)))">
+                        <option value="@EnergyRole.Auto">Automatic</option>
+                        <option value="@EnergyRole.HeatInput">Heat input</option>
+                        <option value="@EnergyRole.HeatOutput">Heat output</option>
+                        <option value="@EnergyRole.PowerInput">Power input</option>
+                        <option value="@EnergyRole.Ignore">Not counted</option>
+                    </select>
+                    <div class="field-help">
+                        @(node.EnergyRole == EnergyRole.Auto
+                            ? auto
+                            : node.EnergyRole == EnergyRole.Ignore
+                                ? "Left out of the heat and power totals."
+                                : "Counts the enthalpy change of stream 1 (inlet to outlet).")
+                    </div>
+                </div>
+            </section>
+        }
 
         <ResultSection State="State" Node="node" Descriptor="descriptor"/>
     }
@@ -159,6 +197,9 @@
         string? label = node is null ? null : State.Catalog.Find(node.TypeId)?.FindPort(port.PortKey)?.Label;
         return node is null ? "?" : $"{node.Name} · {label ?? port.PortKey}";
     }
+
+    private bool InStudy(NodeModel node, ParameterDescriptor parameter) =>
+        State.Document.Study?.Variables.Any(v => v.NodeId == node.Id && v.ParameterKey == parameter.Key) == true;
 
     /// <summary>Field messages sit under the field, so the "Name: " prefix is redundant there.</summary>
     private static string? StripName(string? message, NodeModel node) =>

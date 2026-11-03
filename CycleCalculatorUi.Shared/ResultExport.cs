@@ -26,6 +26,16 @@ public static class ResultExport
             }
         }
 
+        EnergySummary energy = EnergyBalance.Compute(document, catalog, result);
+        csv.AppendLine();
+        csv.AppendLine("Total,Value,Unit");
+        csv.AppendLine($"Heat input,{Number(energy.HeatIn)},kW");
+        csv.AppendLine($"Heat output,{Number(energy.HeatOut)},kW");
+        csv.AppendLine($"Power input,{Number(energy.PowerIn)},kW");
+        if (energy.CopHeating is { } copHeating)
+            csv.AppendLine($"COP heating,{Number(copHeating)},-");
+        if (energy.CopCooling is { } copCooling)
+            csv.AppendLine($"COP cooling,{Number(copCooling)},-");
         return csv.ToString();
     }
 

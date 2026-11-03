@@ -1,4 +1,5 @@
-@* Problems list and a table of all calculated port states. *@
+@* Problems list, a table of all calculated port states, the p-h diagram and the parametric study. *@
+@implements IDisposable
 <section class="bottom-panel @(_open ? "open" : "")">
     <div class="tabs" role="tablist">
         <button type="button" role="tab" class="@(_tab == Tab.Problems && _open ? "active" : "")" @onclick="() => Toggle(Tab.Problems)">
@@ -18,6 +19,13 @@
         <button type="button" role="tab" class="@(_tab == Tab.PhDiagram && _open ? "active" : "")" @onclick="() => Toggle(Tab.PhDiagram)">
             p-h diagram
         </button>
+        <button type="button" role="tab" class="@(_tab == Tab.Study && _open ? "active" : "")" @onclick="() => Toggle(Tab.Study)">
+            Parametric study
+            @if (State.IsStudyRunning)
+            {
+                <span class="count">@State.StudyProgress.Done/@State.StudyProgress.Total</span>
+            }
+        </button>
         <span class="spacer"></span>
         <button type="button" class="icon" aria-label="@(_open ? "Collapse" : "Expand")" @onclick="() => _open = !_open">
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="@(_open ? "M4 6l4 4 4-4" : "M4 10l4-4 4 4")"/></svg>
@@ -25,7 +33,7 @@
     </div>
     @if (_open)
     {
-        <div class="tab-body @(_tab == Tab.PhDiagram ? "tall" : "")">
+        <div class="tab-body @(_tab is Tab.PhDiagram or Tab.Study ? "tall" : "")">
             @if (_tab == Tab.Problems)
             {
                 @if (SolverFailure is { } failure)
@@ -56,12 +64,27 @@
             {
                 <PhDiagramView State="State"/>
             }
+            else if (_tab == Tab.Study)
+            {
+                <StudyPanel State="State"/>
+            }
             else if (State.Result is not { Success: true } result)
             {
                 <p class="muted">@(State.Result?.Message ?? "Press Calculate to solve the system.")</p>
             }
             else
             {
+                EnergySummary energy = EnergyBalance.Compute(State.Document, State.Catalog, result);
+                <dl class="energy-totals @(State.IsResultStale ? "stale" : "")" title="@EnergyTooltip(energy)">
+                    <div><dt>Heat input</dt><dd>@Format.Number(energy.HeatIn, 5) <small>kW</small></dd></div>
+                    <div><dt>Heat output</dt><dd>@Format.Number(energy.HeatOut, 5) <small>kW</small></dd></div>
+                    <div><dt>Power input</dt><dd>@Format.Number(energy.PowerIn, 5) <small>kW</small></dd></div>
+                    @if (energy.CopHeating is { } copHeating)
+                    {
+                        <div><dt>COP heating</dt><dd>@Format.Number(copHeating, 4)</dd></div>
+                        <div><dt>COP cooling</dt><dd>@Format.Number(energy.CopCooling, 4)</dd></div>
+                    }
+                </dl>
                 <table class="result-table wide @(State.IsResultStale ? "stale" : "")">
                     <thead>
                     <tr><th>Component</th><th>Port</th><th>ṁ<small>kg/s</small></th><th>p<small>bar</small></th><th>T<small>°C</small></th><th>h<small>kJ/kg</small></th></tr>
@@ -98,13 +121,39 @@
     {
         Problems,
         Results,
-        PhDiagram
+        PhDiagram,
+        Study
     }
 
     [Parameter, EditorRequired] public EditorState State { get; set; } = null!;
 
     private Tab _tab = Tab.Problems;
     private bool _open;
+
+    protected override void OnInitialized() => State.StudyRequested += ShowStudy;
+
+    public void Dispose() => State.StudyRequested -= ShowStudy;
+
+    private void ShowStudy()
+    {
+        _tab = Tab.Study;
+        _open = true;
+        InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>Which components make up the totals, so the user can check the classification.</summary>
+    private static string EnergyTooltip(EnergySummary energy) => energy.Flows.Count == 0
+        ? "No component adds heat or power."
+        : string.Join("\n", energy.Flows.Select(f => $"{f.Name}: {RoleLabel(f.Role)} {Format.Number(f.Value, 5)} kW{(f.Overridden ? " (set by hand)" : "")}"));
+
+    public static string RoleLabel(EnergyRole role) => role switch
+    {
+        EnergyRole.HeatInput => "heat input",
+        EnergyRole.HeatOutput => "heat output",
+        EnergyRole.PowerInput => "power input",
+        EnergyRole.Ignore => "not counted",
+        _ => "automatic"
+    };
 
     /// <summary>Issues of the current document. An empty canvas is not reported as a problem.</summary>
     private IReadOnlyList<ValidationIssue> Issues => State.Document.Nodes.Count == 0 ? [] : State.Issues;
@@ -123,8 +172,8 @@
     /// <summary>Opens the given tab, e.g. after a calculation.</summary>
     public void Show(bool results)
     {
-        // Stay on the p-h diagram after a successful calculation; it shows the new states.
-        if (!(results && _open && _tab == Tab.PhDiagram))
+        // Stay on the p-h diagram or the study after a successful calculation.
+        if (!(results && _open && _tab is Tab.PhDiagram or Tab.Study))
             _tab = results ? Tab.Results : Tab.Problems;
         _open = true;
         StateHasChanged();

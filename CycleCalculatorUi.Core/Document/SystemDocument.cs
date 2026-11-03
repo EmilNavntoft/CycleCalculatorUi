@@ -21,6 +21,9 @@ public sealed class SystemDocument
 
     public List<ConnectionModel> Connections { get; set; } = [];
 
+    /// <summary>Setup of the parametric study, if one has been defined. It does not affect single calculations.</summary>
+    public Studies.StudyDefinition? Study { get; set; }
+
     public NodeModel? FindNode(string nodeId) => Nodes.FirstOrDefault(node => node.Id == nodeId);
 }
 
@@ -55,6 +58,9 @@ public sealed class NodeModel
 
     /// <summary>Fluid of each stream of the component (one entry for most components, two for heat exchangers).</summary>
     public List<FluidSelection> Fluids { get; set; } = [];
+
+    /// <summary>How the component counts in the energy totals; <see cref="Solving.EnergyRole.Auto"/> follows its type.</summary>
+    public Solving.EnergyRole EnergyRole { get; set; } = Solving.EnergyRole.Auto;
 
     /// <summary>Optional solver start guesses.</summary>
     public List<GuessModel> Guesses { get; set; } = [];

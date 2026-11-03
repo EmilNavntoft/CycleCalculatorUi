@@ -3,6 +3,7 @@ using CycleCalculatorUi.Core.Catalog;
 using CycleCalculatorUi.Core.Document;
 using CycleCalculatorUi.Core.Persistence;
 using CycleCalculatorUi.Core.Solving;
+using CycleCalculatorUi.Core.Studies;
 
 namespace CycleCalculatorUi.Core.Editing;
 
@@ -15,6 +16,8 @@ public sealed class EditorState(ComponentCatalog catalog, SolveService solver)
     private const int MaxUndo = 200;
 
     private readonly ModelBuilder _builder = new(catalog);
+    private readonly StudyRunner _studyRunner = new(catalog, solver);
+    private CancellationTokenSource? _studyCancellation;
     private readonly LinkedList<string> _undo = new();
     private readonly Stack<string> _redo = new();
     private CancellationTokenSource? _solveCancellation;
@@ -138,6 +141,7 @@ public sealed class EditorState(ComponentCatalog catalog, SolveService solver)
         _selectedNodes.Clear();
         SelectedConnectionId = null;
         Result = null;
+        StudyResult = null;
         Touch();
     }
 
@@ -382,6 +386,98 @@ public sealed class EditorState(ComponentCatalog catalog, SolveService solver)
     }
 
     public void CancelSolve() => _solveCancellation?.Cancel();
+
+    /// <summary>Energy totals of the latest successful calculation.</summary>
+    public EnergySummary? Energy => Result is { Success: true } result ? EnergyBalance.Compute(Document, Catalog, result) : null;
+
+    public void SetEnergyRole(string nodeId, EnergyRole role) => EditNode(nodeId, node => node.EnergyRole = role);
+
+    #endregion
+
+    #region parametric study
+
+    public StudyResult? StudyResult { get; private set; }
+
+    public bool IsStudyRunning { get; private set; }
+
+    public StudyProgress StudyProgress { get; private set; }
+
+    /// <summary>True when the document changed since the study ran (apart from the varied parameters).</summary>
+    public bool IsStudyStale => StudyResult is { } result &&
+                                StudyRunner.Fingerprint(Document, result.Definition) != result.Fingerprint;
+
+    /// <summary>Raised when a parameter was added to the study from elsewhere, so the study view can be shown.</summary>
+    public event Action? StudyRequested;
+
+    /// <summary>Changes the study setup as one undoable step, creating it if needed.</summary>
+    public void EditStudy(Action<StudyDefinition> change) => Edit(document => change(document.Study ??= new StudyDefinition()));
+
+    /// <summary>Adds a numeric parameter to the study, spanning ±20 % of its current value in 5 steps.</summary>
+    public void AddStudyVariable(string nodeId, string parameterKey)
+    {
+        if (Document.FindNode(nodeId) is not { } node || Catalog.Find(node.TypeId)?.FindParameter(parameterKey) is not { } parameter)
+            return;
+        if (Document.Study?.Variables.Any(v => v.NodeId == nodeId && v.ParameterKey == parameterKey) == true)
+            return;
+        double value = node.Numbers.GetValueOrDefault(parameterKey, parameter.DefaultNumber) ?? parameter.DefaultNumber ?? 1;
+        double span = Math.Abs(value) * 0.2;
+        if (span == 0)
+            span = 1;
+        double start = value - span, end = value + span;
+        if (parameter.Min is { } min && start < min)
+            start = parameter.MinExclusive ? (value + min) / 2 : min;
+        if (parameter.Max is { } max && end > max)
+            end = max;
+        EditStudy(study => study.Variables.Add(new StudyVariable
+        {
+            NodeId = nodeId, ParameterKey = parameterKey, Start = start, End = end, Steps = 5
+        }));
+        StudyRequested?.Invoke();
+    }
+
+    public async Task RunStudyAsync()
+    {
+        if (IsStudyRunning || Document.Study is not { } study)
+            return;
+        IsStudyRunning = true;
+        StudyProgress = new StudyProgress(0, (int)Math.Min(int.MaxValue, study.PointCount()), 0);
+        _studyCancellation = new CancellationTokenSource();
+        Notify();
+        try
+        {
+            StudyResult = await _studyRunner.RunAsync(Document, study, new CallbackProgress(p =>
+            {
+                StudyProgress = p;
+                Notify();
+            }), _studyCancellation.Token);
+        }
+        finally
+        {
+            IsStudyRunning = false;
+            _studyCancellation.Dispose();
+            _studyCancellation = null;
+            Notify();
+        }
+    }
+
+    public void CancelStudy() => _studyCancellation?.Cancel();
+
+    /// <summary>Sets the document's parameters to the values of one study point, as one undoable step.</summary>
+    public void ApplyStudyPoint(StudyResult result, StudyPoint point) => Edit(document =>
+    {
+        for (int i = 0; i < point.Values.Length; i++)
+        {
+            StudyVariable variable = result.Definition.Variables[i];
+            if (document.FindNode(variable.NodeId) is { } node)
+                node.Numbers[variable.ParameterKey] = point.Values[i];
+        }
+    });
+
+    /// <summary>Reports progress on the calling thread (unlike Progress&lt;T&gt;, which posts to a captured context).</summary>
+    private sealed class CallbackProgress(Action<StudyProgress> report) : IProgress<StudyProgress>
+    {
+        public void Report(StudyProgress value) => report(value);
+    }
 
     #endregion
 }

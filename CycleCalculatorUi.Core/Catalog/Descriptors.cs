@@ -80,6 +80,25 @@ public sealed record ParameterDescriptor(string Key, string Label, ParameterKind
 /// <summary>A calculated value of a component other than its port states, e.g. a valve's outlet pressure.</summary>
 public sealed record OutputValue(string Label, double? Value, string Unit);
 
+/// <summary>How a component type takes part in the system's energy balance (see <c>Solving.EnergyBalance</c>).</summary>
+public enum EnergyKind
+{
+    /// <summary>No heat or work crosses the system boundary (valves, splits, ejectors, boundaries…).</summary>
+    None,
+
+    /// <summary>Work is added to the fluid between "Inlet" and "Outlet" (compressors).</summary>
+    Power,
+
+    /// <summary>Heat from outside the system is added to or removed from the fluid between "Inlet" and "Outlet".</summary>
+    Heat,
+
+    /// <summary>
+    /// Heat moves between stream 1 ("Inlet"/"Outlet") and stream 2 ("Inlet2"/"Outlet2"). It only crosses the system
+    /// boundary when the two streams belong to different fluid circuits.
+    /// </summary>
+    Exchanger
+}
+
 public static class Categories
 {
     public const string Boundaries = "Boundaries";
@@ -121,6 +140,8 @@ public sealed class ComponentDescriptor
     public Func<CycleComponent, string, SignalPort>? GetSignalPort { get; init; }
 
     public Func<CycleComponent, IEnumerable<OutputValue>>? ReadOutputs { get; init; }
+
+    public EnergyKind EnergyKind { get; init; } = EnergyKind.None;
 
     public PortDescriptor? FindPort(string key) => Ports.FirstOrDefault(port => port.Key == key);
 
