@@ -76,9 +76,9 @@
         @* Corner handles of the selected connection, drawn by diagram.js. *@
         <g data-handles class="route-handles"></g>
 
-        @if (ShowValues && result is { Success: true })
+        @if (ShowValues && result is { HasResults: true })
         {
-            <g class="values @(stale ? "stale" : "")">
+            <g class="values @(stale ? "stale" : "") @(result.Success ? "" : "unconverged")">
                 @foreach (ConnectionModel connection in State.Document.Connections.Where(c => c.Kind == ConnectionKind.Fluid))
                 {
                     if (State.Document.FindNode(connection.From.NodeId) is not { } node ||

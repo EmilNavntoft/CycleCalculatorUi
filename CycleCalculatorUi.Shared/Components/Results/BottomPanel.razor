@@ -68,12 +68,16 @@
             {
                 <StudyPanel State="State"/>
             }
-            else if (State.Result is not { Success: true } result)
+            else if (State.Result is not { HasResults: true } result)
             {
                 <p class="muted">@(State.Result?.Message ?? "Press Calculate to solve the system.")</p>
             }
             else
             {
+                if (!result.Success)
+                {
+                    <UnconvergedNotice Message="@result.Message"/>
+                }
                 EnergySummary energy = EnergyBalance.Compute(State.Document, State.Catalog, result);
                 <dl class="energy-totals @(State.IsResultStale ? "stale" : "")" title="@EnergyTooltip(energy)">
                     <div><dt>Heat input</dt><dd>@Format.Number(energy.HeatIn, 5) <small>kW</small></dd></div>

@@ -114,6 +114,29 @@ public class SolveTests
     }
 
     [Test]
+    public async Task NonConvergingSystem_ReturnsLastIterateMarkedAsFailed()
+    {
+        // Two temperatures on one connection conflict in the nonlinear equations.
+        DocumentBuilder builder = new(ComponentCatalog.Default, "Conflicting temperatures",
+            new FluidSelection(CoolPropFluids.CarbonDioxide, CoolPropBackends.HEOS));
+        NodeModel first = builder.Add("BoundaryCondition", "First", 0, 0,
+            ("massFlow", 1), ("pressure", 45), ("temperature", 30));
+        NodeModel second = builder.Add("BoundaryCondition", "Second", 100, 0, ("temperature", 50));
+        SystemDocument document = builder
+            .Choice(first, "thermal", "temperature")
+            .Choice(second, "thermal", "temperature")
+            .Connect(first, "Port", second, "Port")
+            .Build();
+
+        SolveResult result = await _service.SolveAsync(document);
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.HasResults, Is.True, result.Message);
+        Assert.That(result.Message, Does.Contain("did not converge"));
+        Assert.That(result.Port(first.Id, "Port")!.Pressure, Is.EqualTo(45).Within(1e-9));
+    }
+
+    [Test]
     public async Task ThreeWayValve_MassFlowSetpoint_SplitsFlowToMeetIt()
     {
         // Same system as ThreeWayValveTests.GivenMassFlowSetpoint_ValveSplitsFlowToMeetItOrSaturates in the backend.

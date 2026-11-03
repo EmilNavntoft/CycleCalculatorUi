@@ -25,7 +25,7 @@
             }
             <button type="button" class="ghost" title="Save (Ctrl+S)" disabled="@(State.Document.Nodes.Count == 0)" @onclick="SaveAsync">Save</button>
             <button type="button" class="ghost" title="Export all port results as CSV"
-                    disabled="@(State.Result is not { Success: true })" @onclick="ExportCsvAsync">Export CSV</button>
+                    disabled="@(State.Result is not { HasResults: true })" @onclick="ExportCsvAsync">Export CSV</button>
             <select @key="_exampleKey" class="examples" aria-label="Open example" @onchange="OpenExample">
                 <option value="" disabled selected>Open example…</option>
                 @for (int i = 0; i < ExampleSystems.All.Count; i++)
@@ -214,7 +214,7 @@
 
     private async Task ExportCsvAsync()
     {
-        if (State.Result is { Success: true } result)
+        if (State.Result is { HasResults: true } result)
             await Files.SaveAsync(FileName(State.Document.Name) + " results.csv", ResultExport.ToCsv(State.Document, State.Catalog, result), CsvFile);
     }
 
@@ -250,7 +250,7 @@
         await State.SolveAsync();
         if (State.Result is { Success: false } failed && failed.Issues.Count == 0)
             ShowMessage(failed.Message);
-        _bottom?.Show(results: State.Result is { Success: true });
+        _bottom?.Show(results: State.Result is { HasResults: true });
     }
 
     private void NewDocument()

@@ -1,0 +1,363 @@
+@* Parametric study: vary component parameters over a grid, then compare energy totals and picked outputs. *@
+@inject IFileService Files
+
+<div class="study">
+    <div class="study-setup">
+        <section>
+            <h3>Vary</h3>
+            @if (Study.Variables.Count == 0)
+            {
+                <p class="muted small">Pick parameters to vary, or use the <span class="study-icon">⊕</span> button next to a parameter in the inspector.</p>
+            }
+            @for (int i = 0; i < Study.Variables.Count; i++)
+            {
+                int index = i;
+                StudyVariable variable = Study.Variables[i];
+                <div class="study-variable" @key="(variable.NodeId, variable.ParameterKey)">
+                    <div class="study-row-title">
+                        <span title="@Describe(variable)">@Describe(variable)</span>
+                        <button type="button" class="icon small" title="Remove" aria-label="Remove @Describe(variable)"
+                                @onclick="() => State.EditStudy(s => s.Variables.RemoveAt(index))">
+                            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+                        </button>
+                    </div>
+                    <div class="study-range">
+                        <NumberField Label="From" Unit="@Unit(variable)" Value="variable.Start"
+                                     ValueChanged="v => Change(index, x => x.Start = v ?? x.Start)"/>
+                        <NumberField Label="To" Unit="@Unit(variable)" Value="variable.End"
+                                     ValueChanged="v => Change(index, x => x.End = v ?? x.End)"/>
+                        <NumberField Label="Steps" Value="variable.Steps"
+                                     ValueChanged="v => Change(index, x => x.Steps = Math.Clamp((int)Math.Round(v ?? x.Steps), 1, 1000))"/>
+                        <div class="field">
+                            <label>Spacing</label>
+                            <select value="@variable.Spacing" @onchange="e => Change(index, x => x.Spacing = Enum.Parse<StudySpacing>(e.Value?.ToString() ?? nameof(StudySpacing.Linear)))">
+                                <option value="@StudySpacing.Linear">Linear</option>
+                                <option value="@StudySpacing.Logarithmic">Log</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            }
+            <select @key="_addVariableKey" aria-label="Add a parameter to vary" @onchange="AddVariable">
+                <option value="" selected disabled>+ Add parameter…</option>
+                @foreach (NodeModel node in State.Document.Nodes)
+                {
+                    List<ParameterDescriptor> parameters = NumericParameters(node).ToList();
+                    if (parameters.Count == 0)
+                    {
+                        continue;
+                    }
+                    <optgroup label="@node.Name">
+                        @foreach (ParameterDescriptor parameter in parameters)
+                        {
+                            <option value="@node.Id|@parameter.Key">@parameter.Label@(string.IsNullOrEmpty(parameter.Unit) || parameter.Unit == "-" ? "" : $" [{parameter.Unit}]")</option>
+                        }
+                    </optgroup>
+                }
+            </select>
+        </section>
+
+        <section>
+            <h3>Also record</h3>
+            <p class="muted small">Heat input, heat output, power input and COPs are always recorded.</p>
+            @for (int i = 0; i < Study.Outputs.Count; i++)
+            {
+                int index = i;
+                StudyOutput output = Study.Outputs[i];
+                <div class="study-row-title">
+                    <span>@StudyDefinition.Describe(State.Document, State.Catalog, output)</span>
+                    <button type="button" class="icon small" title="Remove" aria-label="Remove output"
+                            @onclick="() => State.EditStudy(s => s.Outputs.RemoveAt(index))">
+                        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+                    </button>
+                </div>
+            }
+            <select @key="_addOutputKey" aria-label="Add a value to record" @onchange="AddOutput">
+                <option value="" selected disabled>+ Add value…</option>
+                @foreach (NodeModel node in State.Document.Nodes)
+                {
+                    if (State.Catalog.Find(node.TypeId) is not { } descriptor)
+                    {
+                        continue;
+                    }
+                    <optgroup label="@node.Name">
+                        @foreach (PortDescriptor port in descriptor.Ports.Where(p => p.Kind == PortKind.Fluid))
+                        {
+                            @foreach (PortQuantity quantity in Enum.GetValues<PortQuantity>())
+                            {
+                                <option value="port|@node.Id|@port.Key|@quantity">@port.Label · @StudyOutput.QuantitySymbol(quantity) [@StudyOutput.QuantityUnit(quantity)]</option>
+                            }
+                        }
+                        @foreach (OutputValue value in ComponentOutputs(node))
+                        {
+                            <option value="output|@node.Id|@value.Label">@value.Label [@value.Unit]</option>
+                        }
+                    </optgroup>
+                }
+            </select>
+            @if (State.Result is not { Success: true })
+            {
+                <p class="muted small">Calculate once to also offer component outputs such as power or valve opening.</p>
+            }
+        </section>
+
+        <section class="study-run">
+            <label class="toggle" title="Start each calculation from the previous point's solution. Usually faster and more robust; a point that fails is retried from scratch.">
+                <input type="checkbox" checked="@Study.WarmStart" @onchange="e => State.EditStudy(s => s.WarmStart = e.Value is true)"/>
+                Start from previous point
+            </label>
+            @if (Problems.Count > 0 && Study.Variables.Count > 0)
+            {
+                <ul class="issue-list">
+                    @foreach (string problem in Problems)
+                    {
+                        <li class="error">@problem</li>
+                    }
+                </ul>
+            }
+            <div class="study-run-row">
+                <span class="muted">@CountText</span>
+                <span class="spacer"></span>
+                @if (State.IsStudyRunning)
+                {
+                    <button type="button" class="secondary" @onclick="State.CancelStudy">Cancel</button>
+                }
+                else
+                {
+                    <button type="button" class="primary" disabled="@(Problems.Count > 0 || State.IsSolving)" @onclick="RunAsync">
+                        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.5v9l7-4.5z"/></svg>
+                        Run study
+                    </button>
+                }
+            </div>
+            @if (_confirmLarge)
+            {
+                <div class="study-confirm">
+                    <span>@Study.PointCount().ToString("N0") calculations may take a while.</span>
+                    <button type="button" class="ghost" @onclick="() => _confirmLarge = false">Back</button>
+                    <button type="button" class="primary" @onclick="() => StartAsync()">Run anyway</button>
+                </div>
+            }
+            @if (State.IsStudyRunning)
+            {
+                StudyProgress progress = State.StudyProgress;
+                <progress max="@Math.Max(1, progress.Total)" value="@progress.Done"></progress>
+                <span class="muted small">@progress.Done of @progress.Total@(progress.Failed > 0 ? $", {progress.Failed} failed" : "")</span>
+            }
+        </section>
+    </div>
+
+    <div class="study-results">
+        @if (State.StudyResult is not { } result)
+        {
+            <p class="muted">@(State.IsStudyRunning ? "Calculating…" : "Run the study to see how the totals change across the parameter grid.")</p>
+        }
+        else
+        {
+            IReadOnlyList<StudyMetric> metrics = StudyMetrics.For(result, State.Catalog);
+            StudyMetric metric = metrics.FirstOrDefault(m => m.Key == _metric) ?? metrics[3];
+            int failed = result.Points.Count(p => !p.Success);
+            <div class="ph-header">
+                <div class="segmented" role="tablist" aria-label="View">
+                    <button type="button" role="tab" class="@(_chart ? "" : "active")" @onclick="() => _chart = false">Table</button>
+                    <button type="button" role="tab" class="@(_chart ? "active" : "")" @onclick="() => _chart = true">Chart</button>
+                </div>
+                @if (_chart)
+                {
+                    <label class="inline-field">Show
+                        <select value="@metric.Key" @onchange="e => _metric = e.Value?.ToString()">
+                            @foreach (StudyMetric m in metrics)
+                            {
+                                <option value="@m.Key">@m.Label</option>
+                            }
+                        </select>
+                    </label>
+                    @if (result.Definition.Variables.Count > 1)
+                    {
+                        <label class="inline-field">against
+                            <select value="@XIndex(result)" @onchange="SetXIndex">
+                                @for (int i = 0; i < result.Definition.Variables.Count; i++)
+                                {
+                                    <option value="@i">@StudyDefinition.Describe(result.Document, State.Catalog, result.Definition.Variables[i])</option>
+                                }
+                            </select>
+                        </label>
+                    }
+                }
+                <span class="spacer"></span>
+                @if (State.IsStudyStale)
+                {
+                    <span class="badge">out of date</span>
+                }
+                <span class="muted">
+                    @result.Points.Count point(s)@(failed > 0 ? $", {failed} failed" : "")@(result.Completed ? "" : ", cancelled") · @result.Duration.TotalSeconds.ToString("0.0", CultureInfo.InvariantCulture) s
+                </span>
+                <button type="button" class="ghost small" @onclick="() => ExportAsync(result)">Export CSV</button>
+            </div>
+
+            @if (_chart)
+            {
+                <StudyChart Result="result" Catalog="State.Catalog" Metric="metric" XIndex="XIndex(result)"/>
+            }
+            else
+            {
+                <div class="study-table-wrap">
+                    <table class="result-table study-table @(State.IsStudyStale ? "stale" : "")">
+                        <thead>
+                        <tr>
+                            @foreach (StudyVariable variable in result.Definition.Variables)
+                            {
+                                <th class="variable">@StudyDefinition.Describe(result.Document, State.Catalog, variable)<small>@StudyDefinition.Unit(result.Document, State.Catalog, variable)</small></th>
+                            }
+                            @foreach (StudyMetric m in metrics)
+                            {
+                                <th>@m.Label<small>@m.Unit</small></th>
+                            }
+                            <th></th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (StudyPoint point in result.Points)
+                        {
+                            <tr class="@(point.Success ? "" : "failed")" title="@(point.Success ? null : point.Message)">
+                                @foreach (double value in point.Values)
+                                {
+                                    <td class="variable">@Format.Number(value, 5)</td>
+                                }
+                                @if (point.Success)
+                                {
+                                    @foreach (StudyMetric m in metrics)
+                                    {
+                                        <td>@Format.Number(m.Read(point), 5)</td>
+                                    }
+                                }
+                                else
+                                {
+                                    <td class="failure" colspan="@metrics.Count">@point.Message</td>
+                                }
+                                <td>
+                                    <button type="button" class="ghost small" title="Set these parameter values in the system"
+                                            @onclick="() => State.ApplyStudyPoint(result, point)">Apply</button>
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public EditorState State { get; set; } = null!;
+
+    private static readonly FileType CsvFile = new("CSV table", ".csv");
+    private static readonly StudyDefinition Empty = new();
+
+    private int _addVariableKey, _addOutputKey;
+    private bool _chart;
+    private bool _confirmLarge;
+    private string? _metric;
+    private int _xIndex;
+
+    private StudyDefinition Study => State.Document.Study ?? Empty;
+
+    private IReadOnlyList<string> Problems
+    {
+        get
+        {
+            List<string> problems = [.. Study.Validate(State.Document, State.Catalog)];
+            // Errors on a varied parameter are fine: the study overwrites it. Anything else would fail every point.
+            bool otherErrors = State.Issues.Any(issue => issue.Severity == IssueSeverity.Error &&
+                !Study.Variables.Any(v => v.NodeId == issue.NodeId && v.ParameterKey == issue.ParameterKey));
+            if (otherErrors)
+                problems.Add("Fix the problems in the system first (see the Problems tab).");
+            return problems;
+        }
+    }
+
+    private string CountText => Study.Variables.Count == 0
+        ? "Nothing to run yet"
+        : $"{string.Join(" × ", Study.Variables.Select(v => Math.Max(1, v.Steps)))} = {Study.PointCount():N0} calculation{(Study.PointCount() == 1 ? "" : "s")}";
+
+    private void SetXIndex(ChangeEventArgs e) => _xIndex = int.TryParse(e.Value?.ToString(), out int index) ? index : 0;
+
+    private int XIndex(StudyResult result) => Math.Clamp(_xIndex, 0, result.Definition.Variables.Count - 1);
+
+    private string Describe(StudyVariable variable) => StudyDefinition.Describe(State.Document, State.Catalog, variable);
+
+    private string Unit(StudyVariable variable) => StudyDefinition.Unit(State.Document, State.Catalog, variable);
+
+    private IEnumerable<ParameterDescriptor> NumericParameters(NodeModel node) =>
+        State.Catalog.Find(node.TypeId)?.Parameters.Where(p => p.Kind == ParameterKind.Number && p.Active(node)) ?? [];
+
+    private IEnumerable<OutputValue> ComponentOutputs(NodeModel node) =>
+        State.Result is { Success: true } result && result.Outputs.TryGetValue(node.Id, out IReadOnlyList<OutputValue>? outputs)
+            ? outputs
+            : [];
+
+    private void Change(int index, Action<StudyVariable> change) => State.EditStudy(study =>
+    {
+        if (index < study.Variables.Count)
+            change(study.Variables[index]);
+    });
+
+    private void AddVariable(ChangeEventArgs e)
+    {
+        _addVariableKey++;
+        if (e.Value?.ToString()?.Split('|') is [var nodeId, var key])
+            State.AddStudyVariable(nodeId, key);
+    }
+
+    private void AddOutput(ChangeEventArgs e)
+    {
+        _addOutputKey++;
+        string[] parts = e.Value?.ToString()?.Split('|', 4) ?? [];
+        StudyOutput? output = parts switch
+        {
+            ["port", var nodeId, var port, var quantity] => new StudyOutput
+            {
+                Kind = StudyOutputKind.Port, NodeId = nodeId, PortKey = port, Quantity = Enum.Parse<PortQuantity>(quantity)
+            },
+            ["output", var nodeId, var label] => new StudyOutput
+            {
+                Kind = StudyOutputKind.Component, NodeId = nodeId, Label = label,
+                Unit = ComponentOutputs(State.Document.FindNode(nodeId)!).FirstOrDefault(o => o.Label == label)?.Unit
+            },
+            _ => null
+        };
+        if (output is null)
+            return;
+        State.EditStudy(study =>
+        {
+            bool exists = study.Outputs.Any(o => o.Kind == output.Kind && o.NodeId == output.NodeId &&
+                                                 o.PortKey == output.PortKey && o.Quantity == output.Quantity && o.Label == output.Label);
+            if (!exists)
+                study.Outputs.Add(output);
+        });
+    }
+
+    private async Task RunAsync()
+    {
+        if (Study.PointCount() > StudyDefinition.LargeStudy)
+        {
+            _confirmLarge = true;
+            return;
+        }
+
+        await StartAsync();
+    }
+
+    private async Task StartAsync()
+    {
+        _confirmLarge = false;
+        await State.RunStudyAsync();
+    }
+
+    private async Task ExportAsync(StudyResult result)
+    {
+        string name = string.Concat(result.Document.Name.Split(Path.GetInvalidFileNameChars())).Trim();
+        await Files.SaveAsync($"{(name.Length == 0 ? "system" : name)} study.csv", StudyExport.ToCsv(result, State.Catalog), CsvFile);
+    }
+}

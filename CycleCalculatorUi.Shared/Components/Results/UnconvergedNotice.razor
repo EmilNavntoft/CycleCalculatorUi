@@ -1,0 +1,10 @@
+@* Shown above results from a solve that did not converge. *@
+<div class="unconverged-notice" role="alert">
+    <strong>Calculation failed — the solver did not converge.</strong>
+    The values below are its last iterate and do not satisfy the equations; use them for debugging only.
+    <div class="unconverged-message">@Message</div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Message { get; set; } = "";
+}

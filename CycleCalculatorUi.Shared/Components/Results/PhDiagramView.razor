@@ -154,7 +154,8 @@
     private string Hint => State.Result switch
     {
         null => "Calculate to plot the cycle.",
-        { Success: false } => "The last calculation failed; no states to plot.",
+        { HasResults: false } => "The last calculation failed; no states to plot.",
+        { Success: false } => "The last calculation did not converge; showing the solver's last iterate.",
         _ when State.IsResultStale => "States are from an older calculation.",
         _ => "Scroll to zoom, drag to pan. Hover a point for values, click to select its component."
     };

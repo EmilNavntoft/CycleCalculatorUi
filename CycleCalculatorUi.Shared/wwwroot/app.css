@@ -344,6 +344,10 @@ kbd {
 .stale .facts dd, .facts.stale dd, .result-table.stale td, .results.stale td { color: var(--muted); font-style: italic; }
 
 .badge { padding: 1px 6px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); font-size: 10.5px; font-weight: 600; }
+.badge.error { background: var(--danger-soft); color: var(--danger); }
+.unconverged-notice { margin: 0 0 8px; padding: 8px 10px; border-left: 3px solid var(--danger); border-radius: 4px; background: var(--danger-soft); color: var(--danger); font-size: 12.5px; }
+.unconverged-notice .unconverged-message { margin-top: 4px; font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; }
+.values.unconverged .value-label { fill: var(--danger); font-style: italic; }
 
 .result-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 12px; }
 .result-table th { padding: 4px; border-bottom: 1px solid var(--border); color: var(--muted); font-weight: 500; text-align: right; white-space: nowrap; }

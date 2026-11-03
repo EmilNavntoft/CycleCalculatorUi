@@ -1,0 +1,212 @@
+@* Line chart of one study result against one varied parameter; the other parameters give one line each. *@
+@using System.Globalization
+
+@if (_series.Count == 0 || _yMin is null)
+{
+    <p class="muted">No calculated values to plot.</p>
+}
+else
+{
+    <div class="study-legend">
+        @foreach ((Series series, int index) in _series.Select((s, i) => (s, i)))
+        {
+            <span><i class="key-swatch" style="background: var(--series-@(index + 1))"></i>@series.Label</span>
+        }
+        @if (_hidden > 0)
+        {
+            <span class="muted">+@_hidden more not shown, use the table</span>
+        }
+    </div>
+    <svg class="study-chart" viewBox="0 0 @W @H" preserveAspectRatio="xMidYMid meet" role="img"
+         aria-label="@Metric.Label against @XLabel">
+        @foreach (double y in _yTicks)
+        {
+            <g>
+                <line class="grid" x1="@L" x2="@(L + PlotW)" y1="@N(Y(y))" y2="@N(Y(y))"/>
+                <text class="tick" x="@(L - 6)" y="@N(Y(y) + 3.5)" text-anchor="end">@Tick(y, _yStep)</text>
+            </g>
+        }
+        @foreach (double x in _xTicks)
+        {
+            <g><text class="tick" x="@N(X(x))" y="@(T + PlotH + 14)" text-anchor="middle">@Tick(x, _xStep)</text></g>
+        }
+        <line class="axis" x1="@L" x2="@(L + PlotW)" y1="@(T + PlotH)" y2="@(T + PlotH)"/>
+        <text class="axis-title" x="@(L + PlotW / 2)" y="@(H - 4)" text-anchor="middle">@XLabel</text>
+        <text class="axis-title" transform="translate(13 @(T + PlotH / 2)) rotate(-90)" text-anchor="middle">@Metric.Label [@Metric.Unit]</text>
+
+        @for (int i = 0; i < _series.Count; i++)
+        {
+            Series series = _series[i];
+            string color = $"var(--series-{i + 1})";
+            <path class="series-line" d="@LinePath(series)" style="stroke: @color"/>
+            @foreach ((double x, double? y, StudyPoint _) in series.Points)
+            {
+                if (y is { } value)
+                {
+                    <circle class="series-dot" cx="@N(X(x))" cy="@N(Y(value))" r="4" style="fill: @color"/>
+                }
+            }
+        }
+        @if (_hover is { } hover)
+        {
+            <line class="crosshair" x1="@N(X(hover.X))" x2="@N(X(hover.X))" y1="@T" y2="@(T + PlotH)"/>
+        }
+        @* Hit targets larger than the dots, on top. *@
+        @foreach (Series series in _series)
+        {
+            foreach ((double x, double? y, StudyPoint point) in series.Points)
+            {
+                if (y is { } value)
+                {
+                    Hover target = new(series, x, value, point);
+                    <circle class="hit" cx="@N(X(x))" cy="@N(Y(value))" r="10"
+                            @onmouseover="() => _hover = target" @onmouseout="() => _hover = null"/>
+                }
+            }
+        }
+        @if (_hover is { } tip)
+        {
+            string title = _series.Count > 1 ? tip.Series.Label : Metric.Label;
+            string xUnit = StudyDefinition.Unit(Result.Document, Catalog, Result.Definition.Variables[XIndex]);
+            string values = $"{XShort} {Format.Number(tip.X, 5)} {WithUnit(xUnit)}   {Metric.Label} {Format.Number(tip.Y, 5)} {WithUnit(Metric.Unit)}";
+            double width = Math.Max(title.Length, values.Length) * 5.7 + 16;
+            double tx = X(tip.X) + 12 + width > L + PlotW ? X(tip.X) - 12 - width : X(tip.X) + 12;
+            double ty = Math.Clamp(Y(tip.Y) - 40, T, T + PlotH - 38);
+            <g class="tooltip" pointer-events="none">
+                <rect x="@N(tx)" y="@N(ty)" width="@N(width)" height="38" rx="6"/>
+                <text x="@N(tx + 8)" y="@N(ty + 15)" class="tt-title">@title</text>
+                <text x="@N(tx + 8)" y="@N(ty + 30)">@values</text>
+            </g>
+        }
+    </svg>
+}
+
+@code {
+    [Parameter, EditorRequired] public StudyResult Result { get; set; } = null!;
+    [Parameter, EditorRequired] public ComponentCatalog Catalog { get; set; } = null!;
+    [Parameter, EditorRequired] public StudyMetric Metric { get; set; } = null!;
+
+    /// <summary>Index of the variable on the x axis.</summary>
+    [Parameter] public int XIndex { get; set; }
+
+    /// <summary>Lines beyond the categorical palette are left out rather than given generated colors.</summary>
+    private const int MaxSeries = 8;
+
+    private const double W = 1000, H = 300, L = 64, T = 10, R = 16, B = 38;
+    private const double PlotW = W - L - R, PlotH = H - T - B;
+
+    private sealed record Series(string Label, List<(double X, double? Y, StudyPoint Point)> Points);
+
+    private sealed record Hover(Series Series, double X, double Y, StudyPoint Point);
+
+    private List<Series> _series = [];
+    private int _hidden;
+    private double _xMin, _xMax;
+    private double? _yMin, _yMax;
+    private double _xStep, _yStep;
+    private IReadOnlyList<double> _xTicks = [], _yTicks = [];
+    private Hover? _hover;
+
+    private string XLabel => $"{StudyDefinition.Describe(Result.Document, Catalog, Result.Definition.Variables[XIndex])} " +
+                             $"[{StudyDefinition.Unit(Result.Document, Catalog, Result.Definition.Variables[XIndex])}]";
+
+    private string XShort => Catalog.Find(Result.Document.FindNode(Result.Definition.Variables[XIndex].NodeId)?.TypeId ?? "")
+        ?.FindParameter(Result.Definition.Variables[XIndex].ParameterKey)?.Label ?? "x";
+
+    protected override void OnParametersSet()
+    {
+        _hover = null;
+        IReadOnlyList<StudyVariable> variables = Result.Definition.Variables;
+        int x = Math.Clamp(XIndex, 0, variables.Count - 1);
+
+        // Group by the values of every other variable; each group is one line.
+        List<Series> all = Result.Points
+            .GroupBy(p => string.Join("|", p.Values.Where((_, i) => i != x).Select(v => v.ToString("R", CultureInfo.InvariantCulture))))
+            .Select(group =>
+            {
+                StudyPoint first = group.First();
+                string label = string.Join(", ", first.Values.Select((v, i) => (v, i)).Where(t => t.i != x).Select(t =>
+                    $"{StudyDefinition.Describe(Result.Document, Catalog, variables[t.i])} = {Format.Number(t.v, 4)} " +
+                    StudyDefinition.Unit(Result.Document, Catalog, variables[t.i])));
+                return new Series(label.Length == 0 ? Metric.Label : label,
+                    group.Select(p => (p.Values[x], p.Success ? Metric.Read(p) : null, p)).OrderBy(t => t.Item1).ToList());
+            })
+            .ToList();
+        _series = all.Take(MaxSeries).ToList();
+        _hidden = all.Count - _series.Count;
+
+        List<double> xs = _series.SelectMany(s => s.Points.Select(p => p.X)).ToList();
+        List<double> ys = _series.SelectMany(s => s.Points.Select(p => p.Y)).OfType<double>().Where(double.IsFinite).ToList();
+        if (xs.Count == 0 || ys.Count == 0)
+        {
+            _yMin = null;
+            return;
+        }
+
+        (_xMin, _xMax, _xStep, _xTicks) = Scale(xs.Min(), xs.Max(), false);
+        (double yMin, double yMax, _yStep, _yTicks) = Scale(ys.Min(), ys.Max(), true);
+        (_yMin, _yMax) = (yMin, yMax);
+    }
+
+    /// <summary>A rounded range with about five ticks. The y range pads a little so dots do not sit on the frame.</summary>
+    private static (double Min, double Max, double Step, IReadOnlyList<double> Ticks) Scale(double min, double max, bool pad)
+    {
+        if (max - min < 1e-12 * Math.Max(1, Math.Abs(max)))
+        {
+            double half = Math.Max(Math.Abs(min) * 0.05, 1e-6);
+            min -= half;
+            max += half;
+        }
+
+        double step = NiceStep((max - min) / 5);
+        double lo = pad ? Math.Floor(min / step) * step : min;
+        double hi = pad ? Math.Ceiling(max / step) * step : max;
+        List<double> ticks = [];
+        for (double t = Math.Ceiling(lo / step - 1e-9) * step; t <= hi + step * 1e-9; t += step)
+            ticks.Add(Math.Abs(t) < step * 1e-9 ? 0 : t);
+        return (lo, hi, step, ticks);
+    }
+
+    private static double NiceStep(double raw)
+    {
+        double magnitude = Math.Pow(10, Math.Floor(Math.Log10(raw)));
+        double fraction = raw / magnitude;
+        return (fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 2.5 ? 2.5 : fraction <= 5 ? 5 : 10) * magnitude;
+    }
+
+    private double X(double value) => L + (value - _xMin) / (_xMax - _xMin) * PlotW;
+
+    private double Y(double value) => T + PlotH - (value - _yMin!.Value) / (_yMax!.Value - _yMin.Value) * PlotH;
+
+    /// <summary>Line through the series' points; failed points leave a gap.</summary>
+    private string LinePath(Series series)
+    {
+        System.Text.StringBuilder path = new();
+        bool pen = false;
+        foreach ((double x, double? y, StudyPoint _) in series.Points)
+        {
+            if (y is not { } value || !double.IsFinite(value))
+            {
+                pen = false;
+                continue;
+            }
+
+            path.Append(pen ? 'L' : 'M').Append(N(X(x))).Append(' ').Append(N(Y(value)));
+            pen = true;
+        }
+
+        return path.ToString();
+    }
+
+    private static string WithUnit(string unit) => unit is "-" ? "" : unit;
+
+    private static string N(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
+
+    private static string Tick(double value, double step)
+    {
+        int decimals = Math.Max(0, (int)Math.Ceiling(-Math.Log10(step) - 1e-9));
+        if (step * Math.Pow(10, decimals) % 1 > 1e-9)
+            decimals++;
+        return value.ToString("F" + Math.Min(decimals, 8), CultureInfo.InvariantCulture);
+    }
+}

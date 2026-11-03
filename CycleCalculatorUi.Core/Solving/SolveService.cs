@@ -14,7 +14,12 @@ public sealed record PortResult(double MassFlow, double Pressure, double Tempera
 
 public sealed class SolveResult
 {
+    /// <summary>True when the solver converged.</summary>
     public required bool Success { get; init; }
+
+    /// <summary>True when port values are available. A solve that did not converge still carries the solver's
+    /// last iterate (with Success = false) so it can be inspected.</summary>
+    public bool HasResults => Ports.Count > 0;
 
     public required string Message { get; init; }
 
@@ -86,11 +91,12 @@ public sealed class SolveService
 
         await _slots.WaitAsync(cancellationToken);
         // Free the slot when the solver really finishes, even if we stopped waiting for it earlier.
-        Task solve = Task.Run(() => Orchestrator.Solve(build.Components), CancellationToken.None);
+        Task<SolveOutcome> solve = Task.Run(() => Orchestrator.TrySolve(build.Components), CancellationToken.None);
         _ = solve.ContinueWith(_ => _slots.Release(), TaskScheduler.Default);
+        SolveOutcome outcome;
         try
         {
-            await solve.WaitAsync(_options.Timeout, cancellationToken);
+            outcome = await solve.WaitAsync(_options.Timeout, cancellationToken);
         }
         catch (TimeoutException)
         {
@@ -107,8 +113,10 @@ public sealed class SolveService
 
         return new SolveResult
         {
-            Success = true,
-            Message = $"Solved in {stopwatch.Elapsed.TotalSeconds:0.00} s.",
+            Success = outcome.Converged,
+            Message = outcome.Converged
+                ? $"Solved in {stopwatch.Elapsed.TotalSeconds:0.00} s."
+                : outcome.ErrorMessage!,
             Duration = stopwatch.Elapsed,
             Issues = build.Issues,
             Ports = ReadPorts(snapshot, build),

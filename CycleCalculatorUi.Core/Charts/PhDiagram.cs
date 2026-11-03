@@ -88,7 +88,7 @@ public static class PhDiagramBuilder
             HashSet<StreamRef> streams = fluid.SelectMany(c => c.Members).ToHashSet();
             List<PhState> states = [];
             List<(PhState, PhState)> processes = [];
-            if (result is { Success: true })
+            if (result is { HasResults: true })
                 CollectStates(document, catalog, result, streams, states, processes);
             charts.Add(BuildChart(fluid.Key, states, processes, views?.GetValueOrDefault(fluid.Key)));
         }
