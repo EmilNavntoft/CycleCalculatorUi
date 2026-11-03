@@ -74,7 +74,52 @@ public sealed record ParameterDescriptor(string Key, string Label, ParameterKind
     /// <summary>Parameters are hidden and ignored when this returns false, e.g. when another mode is chosen.</summary>
     public Func<NodeModel, bool>? IsActive { get; init; }
 
+    /// <summary>
+    /// Key of the <see cref="RepeatGroupDescriptor"/> this parameter belongs to, if any. A node then holds one value
+    /// per group item, stored under <see cref="RepeatGroupDescriptor.ItemKey"/>.
+    /// </summary>
+    public string? Group { get; init; }
+
     public bool Active(NodeModel node) => IsActive?.Invoke(node) ?? true;
+}
+
+/// <summary>
+/// A set of parameters a node can hold several copies of, e.g. the polynomials of each compressor in parallel.
+/// Item 1 uses the plain parameter keys; item n &gt; 1 uses "key#n".
+/// </summary>
+public sealed record RepeatGroupDescriptor(string Key, string ItemLabel)
+{
+    public const char Separator = '#';
+
+    public int MinCount { get; init; } = 1;
+
+    public int MaxCount { get; init; } = 20;
+
+    public string? Help { get; init; }
+
+    /// <summary>The storage key of a parameter for the item at zero-based <paramref name="index"/>.</summary>
+    public static string ItemKey(string parameterKey, int index) =>
+        index == 0 ? parameterKey : $"{parameterKey}{Separator}{index + 1}";
+
+    /// <summary>Splits a storage key into the parameter key and the zero-based item index.</summary>
+    public static (string ParameterKey, int Index) Parse(string key)
+    {
+        int separator = key.LastIndexOf(Separator);
+        return separator > 0 && int.TryParse(key[(separator + 1)..], out int number) && number > 1
+            ? (key[..separator], number - 1)
+            : (key, 0);
+    }
+
+    /// <summary>Number of items a node has, within <see cref="MinCount"/> and <see cref="MaxCount"/>.</summary>
+    public int Count(NodeModel node) =>
+        Math.Clamp(node.GroupCounts.GetValueOrDefault(Key, MinCount), MinCount, MaxCount);
+}
+
+/// <summary>One stored value of a parameter: the parameter itself for ungrouped ones, otherwise one group item.</summary>
+public sealed record ParameterInstance(ParameterDescriptor Parameter, string Key, RepeatGroupDescriptor? Group, int Index)
+{
+    /// <summary>The label with the group item in front, e.g. "Compressor 2: Mass flow polynomial".</summary>
+    public string FullLabel => Group is null ? Parameter.Label : $"{Group.ItemLabel} {Index + 1}: {Parameter.Label}";
 }
 
 /// <summary>A calculated value of a component other than its port states, e.g. a valve's outlet pressure.</summary>
@@ -132,6 +177,9 @@ public sealed class ComponentDescriptor
 
     public IReadOnlyList<ParameterDescriptor> Parameters { get; init; } = [];
 
+    /// <summary>Groups of parameters a node can repeat; see <see cref="ParameterDescriptor.Group"/>.</summary>
+    public IReadOnlyList<RepeatGroupDescriptor> RepeatGroups { get; init; } = [];
+
     /// <summary>Creates the backend component; throws ArgumentException for invalid parameters.</summary>
     public required Func<BuildContext, CycleComponent> Create { get; init; }
 
@@ -145,7 +193,30 @@ public sealed class ComponentDescriptor
 
     public PortDescriptor? FindPort(string key) => Ports.FirstOrDefault(port => port.Key == key);
 
-    public ParameterDescriptor? FindParameter(string key) => Parameters.FirstOrDefault(p => p.Key == key);
+    /// <summary>Finds a parameter by key. Keys of repeated group items ("key#2") resolve to their parameter.</summary>
+    public ParameterDescriptor? FindParameter(string key) =>
+        Parameters.FirstOrDefault(p => p.Key == key) ??
+        (RepeatGroupDescriptor.Parse(key) is var (baseKey, index) && index > 0
+            ? Parameters.FirstOrDefault(p => p.Key == baseKey && p.Group is not null)
+            : null);
+
+    public RepeatGroupDescriptor? FindGroup(string key) => RepeatGroups.FirstOrDefault(g => g.Key == key);
+
+    /// <summary>Every stored value of the active parameters of a node, with repeated groups expanded per item.</summary>
+    public IEnumerable<ParameterInstance> ParameterInstances(NodeModel node)
+    {
+        foreach (ParameterDescriptor parameter in Parameters.Where(p => p.Active(node)))
+        {
+            if (parameter.Group is null || FindGroup(parameter.Group) is not { } group)
+            {
+                yield return new ParameterInstance(parameter, parameter.Key, null, 0);
+                continue;
+            }
+
+            for (int index = 0; index < group.Count(node); index++)
+                yield return new ParameterInstance(parameter, RepeatGroupDescriptor.ItemKey(parameter.Key, index), group, index);
+        }
+    }
 
     /// <summary>Creates a node of this type with default parameter values.</summary>
     public NodeModel CreateNode(string name, double x, double y, FluidSelection fluid)
@@ -166,6 +237,9 @@ public sealed class ComponentDescriptor
                     break;
             }
         }
+
+        foreach (RepeatGroupDescriptor group in RepeatGroups)
+            node.GroupCounts[group.Key] = group.MinCount;
 
         node.Fluids = Streams
             .Select((_, stream) => (stream < StreamDefaults.Count ? StreamDefaults[stream] : null) ?? fluid)
@@ -194,6 +268,11 @@ public sealed class BuildContext(NodeModel node, ComponentDescriptor descriptor,
             return null;
         return Node.Numbers.TryGetValue(key, out double? value) ? value : parameter.DefaultNumber;
     }
+
+    /// <summary>Number of items of a repeated parameter group; see <see cref="RepeatGroupDescriptor"/>.</summary>
+    public int Count(string groupKey) =>
+        (descriptor.FindGroup(groupKey) ?? throw new InvalidOperationException($"Unknown parameter group '{groupKey}'."))
+        .Count(Node);
 
     /// <summary>The value of a required numeric parameter.</summary>
     public double Number(string key) =>

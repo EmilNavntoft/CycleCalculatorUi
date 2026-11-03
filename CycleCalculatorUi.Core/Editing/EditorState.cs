@@ -318,6 +318,90 @@ public sealed class EditorState(ComponentCatalog catalog, SolveService solver)
     public void SetChoice(string nodeId, string key, string value) =>
         EditNode(nodeId, node => node.Choices[key] = value);
 
+    /// <summary>Adds an item to a repeated parameter group, starting as a copy of the last item.</summary>
+    public void AddGroupItem(string nodeId, string groupKey)
+    {
+        if (Document.FindNode(nodeId) is not { } node || Catalog.Find(node.TypeId) is not { } descriptor ||
+            descriptor.FindGroup(groupKey) is not { } group || group.Count(node) >= group.MaxCount)
+            return;
+
+        EditNode(nodeId, n =>
+        {
+            int count = group.Count(n);
+            foreach (ParameterDescriptor parameter in descriptor.Parameters.Where(p => p.Group == groupKey))
+            {
+                string last = RepeatGroupDescriptor.ItemKey(parameter.Key, count - 1);
+                string added = RepeatGroupDescriptor.ItemKey(parameter.Key, count);
+                if (n.Numbers.TryGetValue(last, out double? number))
+                    n.Numbers[added] = number;
+                if (n.Arrays.TryGetValue(last, out double[]? values))
+                    n.Arrays[added] = values?.ToArray();
+                if (n.Choices.TryGetValue(last, out string? choice))
+                    n.Choices[added] = choice;
+            }
+
+            n.GroupCounts[groupKey] = count + 1;
+        });
+    }
+
+    /// <summary>Removes the item at zero-based <paramref name="index"/> from a repeated group; later items move up.</summary>
+    public void RemoveGroupItem(string nodeId, string groupKey, int index)
+    {
+        if (Document.FindNode(nodeId) is not { } node || Catalog.Find(node.TypeId) is not { } descriptor ||
+            descriptor.FindGroup(groupKey) is not { } group || group.Count(node) <= group.MinCount ||
+            index < 0 || index >= group.Count(node))
+            return;
+
+        Edit(document =>
+        {
+            NodeModel n = document.FindNode(nodeId)!;
+            int count = group.Count(n);
+            foreach (ParameterDescriptor parameter in descriptor.Parameters.Where(p => p.Group == groupKey))
+            {
+                for (int i = index; i < count - 1; i++)
+                {
+                    string target = RepeatGroupDescriptor.ItemKey(parameter.Key, i);
+                    string source = RepeatGroupDescriptor.ItemKey(parameter.Key, i + 1);
+                    MoveValue(n.Numbers, source, target);
+                    MoveValue(n.Arrays, source, target);
+                    MoveValue(n.Choices, source, target);
+                }
+
+                string removed = RepeatGroupDescriptor.ItemKey(parameter.Key, count - 1);
+                n.Numbers.Remove(removed);
+                n.Arrays.Remove(removed);
+                n.Choices.Remove(removed);
+            }
+
+            n.GroupCounts[groupKey] = count - 1;
+
+            // Study variables on the removed item go away; those on later items follow their item.
+            if (document.Study is { } study)
+            {
+                study.Variables.RemoveAll(v => v.NodeId == nodeId && GroupIndex(v.ParameterKey) == index);
+                foreach (StudyVariable variable in study.Variables.Where(v => v.NodeId == nodeId))
+                {
+                    (string baseKey, int i) = RepeatGroupDescriptor.Parse(variable.ParameterKey);
+                    if (i > index && descriptor.FindParameter(baseKey)?.Group == groupKey)
+                        variable.ParameterKey = RepeatGroupDescriptor.ItemKey(baseKey, i - 1);
+                }
+            }
+
+            int? GroupIndex(string key) =>
+                RepeatGroupDescriptor.Parse(key) is var (baseKey, i) && descriptor.FindParameter(baseKey)?.Group == groupKey
+                    ? i
+                    : null;
+        });
+
+        static void MoveValue<T>(Dictionary<string, T> values, string source, string target)
+        {
+            if (values.Remove(source, out T? value))
+                values[target] = value;
+            else
+                values.Remove(target);
+        }
+    }
+
     public void Rename(string nodeId, string name) => EditNode(nodeId, node => node.Name = name.Trim());
 
     /// <summary>Rotates the selected components by a multiple of 90 degrees, as one undo step.</summary>

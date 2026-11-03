@@ -53,6 +53,12 @@ public sealed class NodeModel
     /// <summary>Coefficient lists such as EN 12900 polynomials; null means "not given".</summary>
     public Dictionary<string, double[]?> Arrays { get; set; } = [];
 
+    /// <summary>
+    /// Number of items of each repeated parameter group, e.g. compressors in parallel. Missing groups have their
+    /// minimum count. The values of item n &gt; 1 are stored under "key#n" in the dictionaries above.
+    /// </summary>
+    public Dictionary<string, int> GroupCounts { get; set; } = [];
+
     /// <summary>Choice parameters such as an operating mode.</summary>
     public Dictionary<string, string> Choices { get; set; } = [];
 

@@ -208,47 +208,47 @@ public sealed class ModelBuilder(ComponentCatalog catalog)
 
     private static void ValidateParameters(NodeModel node, ComponentDescriptor descriptor, List<ValidationIssue> issues)
     {
-        foreach (ParameterDescriptor parameter in descriptor.Parameters.Where(p => p.Kind == ParameterKind.Coefficients))
+        List<ParameterInstance> instances = descriptor.ParameterInstances(node).ToList();
+        foreach (ParameterInstance instance in instances.Where(i => i.Parameter.Kind == ParameterKind.Coefficients))
         {
-            if (!parameter.Active(node))
-                continue;
-            double[]? values = node.Arrays.TryGetValue(parameter.Key, out double[]? stored) ? stored : parameter.DefaultCoefficients;
+            ParameterDescriptor parameter = instance.Parameter;
+            string label = instance.FullLabel;
+            double[]? values = node.Arrays.TryGetValue(instance.Key, out double[]? stored) ? stored : parameter.DefaultCoefficients;
             if (values is null)
             {
                 if (!parameter.Optional)
-                    issues.Add(Issue(node, parameter, $"{parameter.Label} needs {parameter.Length} coefficients."));
+                    issues.Add(Issue(node, instance, $"{label} needs {parameter.Length} coefficients."));
             }
             else if (values.Length != parameter.Length)
-                issues.Add(Issue(node, parameter, $"{parameter.Label} needs {parameter.Length} coefficients, got {values.Length}."));
+                issues.Add(Issue(node, instance, $"{label} needs {parameter.Length} coefficients, got {values.Length}."));
             else if (values.Any(v => !double.IsFinite(v)))
-                issues.Add(Issue(node, parameter, $"{parameter.Label} coefficients must be finite numbers."));
+                issues.Add(Issue(node, instance, $"{label} coefficients must be finite numbers."));
         }
 
-        foreach (ParameterDescriptor parameter in descriptor.Parameters.Where(p => p.Kind == ParameterKind.Number))
+        foreach (ParameterInstance instance in instances.Where(i => i.Parameter.Kind == ParameterKind.Number))
         {
-            if (!parameter.Active(node))
-                continue;
-
-            double? value = node.Numbers.TryGetValue(parameter.Key, out double? stored) ? stored : parameter.DefaultNumber;
+            ParameterDescriptor parameter = instance.Parameter;
+            string label = instance.FullLabel;
+            double? value = node.Numbers.TryGetValue(instance.Key, out double? stored) ? stored : parameter.DefaultNumber;
             if (value is null)
             {
                 if (!parameter.Optional)
-                    issues.Add(Issue(node, parameter, $"{parameter.Label} needs a value."));
+                    issues.Add(Issue(node, instance, $"{label} needs a value."));
                 continue;
             }
 
             if (!double.IsFinite(value.Value))
-                issues.Add(Issue(node, parameter, $"{parameter.Label} must be a finite number."));
+                issues.Add(Issue(node, instance, $"{label} must be a finite number."));
             else if (parameter.Min is { } min && (value < min || (parameter.MinExclusive && value <= min)))
-                issues.Add(Issue(node, parameter,
-                    $"{parameter.Label} must be {(parameter.MinExclusive ? "above" : "at least")} {Format(min)} {parameter.Unit}."));
+                issues.Add(Issue(node, instance,
+                    $"{label} must be {(parameter.MinExclusive ? "above" : "at least")} {Format(min)} {parameter.Unit}."));
             else if (parameter.Max is { } max && value > max)
-                issues.Add(Issue(node, parameter, $"{parameter.Label} must be at most {Format(max)} {parameter.Unit}."));
+                issues.Add(Issue(node, instance, $"{label} must be at most {Format(max)} {parameter.Unit}."));
         }
     }
 
-    private static ValidationIssue Issue(NodeModel node, ParameterDescriptor parameter, string message) =>
-        new(IssueSeverity.Error, $"{node.Name}: {message}", node.Id, parameter.Key);
+    private static ValidationIssue Issue(NodeModel node, ParameterInstance instance, string message) =>
+        new(IssueSeverity.Error, $"{node.Name}: {message}", node.Id, instance.Key);
 
     private static string Format(double value) => value.ToString("G6", CultureInfo.InvariantCulture);
 

@@ -33,54 +33,53 @@
         {
             <section class="inspector-section">
                 <h3>Parameters</h3>
+                @{ HashSet<string> shownGroups = []; }
                 @foreach (ParameterDescriptor parameter in descriptor.Parameters.Where(p => p.Active(node)))
                 {
-                    string? error = issues.FirstOrDefault(i => i.ParameterKey == parameter.Key)?.Message;
-                    if (parameter.Kind == ParameterKind.Choice)
+                    if (parameter.Group is not { } groupKey || descriptor.FindGroup(groupKey) is not { } group)
                     {
-                        string current = node.Choices.GetValueOrDefault(parameter.Key) ?? parameter.DefaultChoice ?? "";
-                        <div class="field">
-                            <label>@parameter.Label</label>
-                            <select value="@current" @onchange="e => State.SetChoice(node.Id, parameter.Key, e.Value?.ToString() ?? current)">
-                                @foreach (ChoiceOption option in parameter.Options)
-                                {
-                                    <option value="@option.Value">@option.Label</option>
-                                }
-                            </select>
-                            @if (parameter.Help is not null)
-                            {
-                                <div class="field-help">@parameter.Help</div>
-                            }
-                        </div>
+                        <ParameterField State="State" Node="node" Instance="new ParameterInstance(parameter, parameter.Key, null, 0)"
+                                        Error="@ErrorFor(issues, parameter.Key, node)"/>
+                        continue;
                     }
-                    else if (parameter.Kind == ParameterKind.Coefficients)
-                    {
-                        <CoefficientsField @key="(node.Id, parameter.Key)" Label="@parameter.Label" Length="parameter.Length"
-                                           Labels="parameter.CoefficientLabels" Optional="parameter.Optional" Help="@parameter.Help"
-                                           Error="@StripName(error, node)"
-                                           Value="node.Arrays.TryGetValue(parameter.Key, out double[]? values) ? values : parameter.DefaultCoefficients"
-                                           ValueChanged="v => State.SetCoefficients(node.Id, parameter.Key, v)"/>
-                    }
-                    else
-                    {
-                        <NumberField @key="(node.Id, parameter.Key)" Label="@parameter.Label" Unit="@parameter.Unit"
-                                     Optional="parameter.Optional" Help="@parameter.Help" Error="@StripName(error, node)"
-                                     Value="node.Numbers.GetValueOrDefault(parameter.Key, parameter.DefaultNumber)"
-                                     ValueChanged="v => State.SetNumber(node.Id, parameter.Key, v)">
-                            <LabelAction>
-                                @if (InStudy(node, parameter))
+
+                    // A repeated group is drawn as a whole where its first parameter is listed.
+                    if (!shownGroups.Add(groupKey))
+                        continue;
+
+                    int count = group.Count(node);
+                    List<ParameterDescriptor> members = descriptor.Parameters.Where(p => p.Group == groupKey && p.Active(node)).ToList();
+                    <div class="repeat-group">
+                        @for (int i = 0; i < count; i++)
+                        {
+                            int index = i;
+                            <fieldset class="repeat-item" @key="(node.Id, groupKey, index)">
+                                <legend>
+                                    <span>@group.ItemLabel @(index + 1)</span>
+                                    @if (count > group.MinCount)
+                                    {
+                                        <button type="button" class="ghost danger small" title="Remove @group.ItemLabel.ToLowerInvariant() @(index + 1)"
+                                                @onclick="() => State.RemoveGroupItem(node.Id, groupKey, index)">Remove</button>
+                                    }
+                                </legend>
+                                @foreach (ParameterDescriptor member in members)
                                 {
-                                    <span class="study-flag" title="Varied in the parametric study">in study</span>
+                                    string key = RepeatGroupDescriptor.ItemKey(member.Key, index);
+                                    <ParameterField State="State" Node="node" Instance="new ParameterInstance(member, key, group, index)"
+                                                    Error="@ErrorFor(issues, key, node)"/>
                                 }
-                                else
-                                {
-                                    <button type="button" class="study-add" title="Vary this parameter in a parametric study"
-                                            aria-label="Add @parameter.Label to the parametric study"
-                                            @onclick="() => State.AddStudyVariable(node.Id, parameter.Key)">⊕</button>
-                                }
-                            </LabelAction>
-                        </NumberField>
-                    }
+                            </fieldset>
+                        }
+                        @if (count < group.MaxCount)
+                        {
+                            <button type="button" class="ghost add-item" title="Adds a copy of the last @group.ItemLabel.ToLowerInvariant()"
+                                    @onclick="() => State.AddGroupItem(node.Id, groupKey)">+ Add @group.ItemLabel.ToLowerInvariant()</button>
+                        }
+                        @if (group.Help is not null)
+                        {
+                            <div class="field-help">@group.Help</div>
+                        }
+                    </div>
                 }
             </section>
         }
@@ -198,8 +197,8 @@
         return node is null ? "?" : $"{node.Name} · {label ?? port.PortKey}";
     }
 
-    private bool InStudy(NodeModel node, ParameterDescriptor parameter) =>
-        State.Document.Study?.Variables.Any(v => v.NodeId == node.Id && v.ParameterKey == parameter.Key) == true;
+    private static string? ErrorFor(IReadOnlyList<ValidationIssue> issues, string key, NodeModel node) =>
+        StripName(issues.FirstOrDefault(i => i.ParameterKey == key)?.Message, node);
 
     /// <summary>Field messages sit under the field, so the "Name: " prefix is redundant there.</summary>
     private static string? StripName(string? message, NodeModel node) =>

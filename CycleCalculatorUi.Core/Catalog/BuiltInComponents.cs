@@ -260,6 +260,7 @@ public static class BuiltInComponents
     public static ComponentDescriptor En12900Compressor()
     {
         static bool DischargeIsPressure(NodeModel node) => ChoiceIs(node, "dischargeCondition", "pressure");
+        const string Group = "compressors";
 
         string[] terms = ["c1 · 1", "c2 · S", "c3 · D", "c4 · S²", "c5 · S·D", "c6 · D²", "c7 · S³", "c8 · S²·D", "c9 · S·D²", "c10 · D³"];
         const string polynomialHelp = "Ten EN 12900 coefficients: S is the suction saturation temperature (°C), " +
@@ -272,8 +273,16 @@ public static class BuiltInComponents
             Category = Categories.Compressors,
             NamePrefix = "Comp",
             Description = "Compressor driven by EN 12900 mass flow and power polynomials. The mass flow is " +
-                          "corrected from the map's nominal superheat to the actual suction density.",
+                          "corrected from the map's nominal superheat to the actual suction density. Add more " +
+                          "compressors to model several running in parallel; their flows and powers add up.",
             Ports = Inline(),
+            RepeatGroups =
+            [
+                new RepeatGroupDescriptor(Group, "Compressor")
+                {
+                    Help = "Compressors in parallel share the suction and discharge conditions, units and nominal superheat."
+                }
+            ],
             Parameters =
             [
                 new ParameterDescriptor("dischargeCondition", "Discharge condition", ParameterKind.Choice)
@@ -319,7 +328,7 @@ public static class BuiltInComponents
                 },
                 new ParameterDescriptor("massFlowPolynomial", "Mass flow polynomial", ParameterKind.Coefficients)
                 {
-                    Length = 10, CoefficientLabels = terms, Help = polynomialHelp,
+                    Group = Group, Length = 10, CoefficientLabels = terms, Help = polynomialHelp,
                     DefaultCoefficients =
                     [
                         2396.20919901144, 69.4448899794199, -5.00691806645477, 0.899339507043113, -0.00410373098918049,
@@ -338,7 +347,7 @@ public static class BuiltInComponents
                 },
                 new ParameterDescriptor("powerPolynomial", "Power polynomial", ParameterKind.Coefficients)
                 {
-                    Length = 10, CoefficientLabels = terms, Help = polynomialHelp,
+                    Group = Group, Length = 10, CoefficientLabels = terms, Help = polynomialHelp,
                     DefaultCoefficients =
                     [
                         -15179.3465346534, -464.76089108911, 754.703465346531, -4.01655742574256, 1.45824059405942,
@@ -347,24 +356,28 @@ public static class BuiltInComponents
                 },
                 new ParameterDescriptor("currentPolynomial", "Current polynomial (A)", ParameterKind.Coefficients)
                 {
-                    Length = 10, CoefficientLabels = terms, Optional = true,
-                    Help = "Optional. Leave empty if the current is not needed."
+                    Group = Group, Length = 10, CoefficientLabels = terms, Optional = true,
+                    Help = "Optional. Leave empty if the current is not needed; with several compressors, give it for all or none."
                 }
             ],
             Create = c =>
             {
                 double superheat = c.Number("nominalSuperheat");
-                double[]? current = c.OptionalCoefficients("currentPolynomial");
-                return new En12900Compressor(c.Name, c.Fluid(), c.Backend(),
-                    new En12900Polynomial(c.Coefficients("massFlowPolynomial"), superheat),
-                    new En12900Polynomial(c.Coefficients("powerPolynomial"), superheat),
+                En12900CompressorMap[] maps = Enumerable.Range(0, c.Count(Group)).Select(index =>
+                {
+                    double[]? current = c.OptionalCoefficients(RepeatGroupDescriptor.ItemKey("currentPolynomial", index));
+                    return new En12900CompressorMap(
+                        new En12900Polynomial(c.Coefficients(RepeatGroupDescriptor.ItemKey("massFlowPolynomial", index)), superheat),
+                        new En12900Polynomial(c.Coefficients(RepeatGroupDescriptor.ItemKey("powerPolynomial", index)), superheat),
+                        current is null ? null : new En12900Polynomial(current, superheat));
+                }).ToArray();
+                return new En12900Compressor(c.Name, c.Fluid(), c.Backend(), maps,
                     Enum.Parse<En12900MassFlowUnit>(c.Choice("massFlowUnit")),
                     Enum.Parse<En12900PowerUnit>(c.Choice("powerUnit")),
                     Enum.Parse<En12900DischargeVariable>(c.Choice("dischargeVariable")),
                     c.Choice("dischargeCondition") == "pressure"
                         ? CompressorDischargeCondition.AtPressure(c.Number("dischargePressure"))
-                        : CompressorDischargeCondition.AtSaturationTemperature(c.Number("dischargeSaturationTemperature")),
-                    current is null ? null : new En12900Polynomial(current, superheat));
+                        : CompressorDischargeCondition.AtSaturationTemperature(c.Number("dischargeSaturationTemperature")));
             },
             EnergyKind = EnergyKind.Power,
             GetPort = Typed.Ports<En12900Compressor>(("Inlet", s => s.Inlet), ("Outlet", s => s.Outlet)),
@@ -372,13 +385,25 @@ public static class BuiltInComponents
             {
                 En12900CompressorPerformance performance =
                     compressor.CalculatePerformance(compressor.Inlet.Pressure, compressor.Inlet.Enthalpy);
-                return
+                List<OutputValue> outputs =
                 [
-                    new OutputValue("Power", performance.PowerKilowatts, "kW"),
-                    new OutputValue("Suction sat. temperature", performance.SuctionSaturationTemperature, "°C"),
-                    new OutputValue("Discharge sat. temperature", performance.DischargeSaturationTemperature, "°C"),
-                    new OutputValue("Current", performance.CurrentAmperes, "A")
+                    new("Power", performance.PowerKilowatts, "kW"),
+                    new("Suction sat. temperature", performance.SuctionSaturationTemperature, "°C"),
+                    new("Discharge sat. temperature", performance.DischargeSaturationTemperature, "°C"),
+                    new("Current", performance.CurrentAmperes, "A")
                 ];
+                if (performance.Maps.Count > 1)
+                {
+                    for (int i = 0; i < performance.Maps.Count; i++)
+                    {
+                        En12900MapPerformance map = performance.Maps[i];
+                        outputs.Add(new OutputValue($"Compressor {i + 1} mass flow", map.MassFlowKilogramsPerSecond, "kg/s"));
+                        outputs.Add(new OutputValue($"Compressor {i + 1} power", map.PowerKilowatts, "kW"));
+                        outputs.Add(new OutputValue($"Compressor {i + 1} current", map.CurrentAmperes, "A"));
+                    }
+                }
+
+                return outputs;
             })
         };
     }

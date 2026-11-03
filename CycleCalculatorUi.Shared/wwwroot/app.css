@@ -539,3 +539,12 @@ button.study-add:hover:not(:disabled) { color: var(--accent); background: var(--
     .study { flex-direction: column; }
     .study-setup { width: auto; border-right: 0; }
 }
+
+/* ---------- repeated parameter groups (e.g. compressors in parallel) ---------- */
+
+.repeat-group { margin-bottom: 12px; }
+.repeat-item { margin: 0 0 8px; padding: 2px 8px 0; border: 1px solid var(--border); border-radius: 8px; min-width: 0; }
+.repeat-item legend { display: flex; align-items: center; gap: 8px; padding: 0 4px; font-size: 12px; font-weight: 650; }
+.repeat-item legend button.small { height: 20px; padding: 0 6px; font-size: 11px; font-weight: 500; }
+.repeat-group button.add-item { width: 100%; border: 1px dashed var(--border); color: var(--muted); }
+.repeat-group button.add-item:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
