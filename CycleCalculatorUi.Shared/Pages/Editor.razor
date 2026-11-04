@@ -5,11 +5,11 @@
 @inject IFileService Files
 @inject IDraftStore Drafts
 
-<PageTitle>@State.Document.Name · CycleCalculator</PageTitle>
+<PageTitle>@State.Document.Name · Cycle Calculator</PageTitle>
 
 <div class="editor">
     <header class="toolbar">
-        <div class="brand"><span class="brand-mark">C</span><span>CycleCalculator</span></div>
+        <div class="brand"><span class="brand-mark">C</span><span>Cycle Calculator</span></div>
         <div class="toolbar-group">
             <button type="button" class="ghost" title="New system" @onclick="NewDocument">New</button>
             @if (Files.HasOpenDialog)
