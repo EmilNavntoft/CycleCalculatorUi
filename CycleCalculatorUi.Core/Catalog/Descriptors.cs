@@ -1,3 +1,4 @@
+﻿using CycleCalculator.CycleModel.Model;
 using CycleCalculator.CycleModel.Model.BaseComponents;
 using CycleCalculator.CycleModel.Model.Connectors;
 using CycleCalculatorUi.Core.Document;
@@ -188,6 +189,10 @@ public sealed class ComponentDescriptor
     public Func<CycleComponent, string, SignalPort>? GetSignalPort { get; init; }
 
     public Func<CycleComponent, IEnumerable<OutputValue>>? ReadOutputs { get; init; }
+
+    /// <summary>Temperatures of both streams along a heat exchanger, read after a solve; null for other components.
+    /// Stream labels come from <see cref="Streams"/>.</summary>
+    public Func<CycleComponent, TemperatureProfile>? ReadTemperatureProfile { get; init; }
 
     public EnergyKind EnergyKind { get; init; } = EnergyKind.None;
 

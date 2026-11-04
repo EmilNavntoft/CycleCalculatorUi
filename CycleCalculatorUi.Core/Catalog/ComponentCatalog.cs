@@ -1,4 +1,5 @@
-using CycleCalculator.CycleModel.Model.BaseComponents;
+using CycleCalculator.CycleModel.Model;
+﻿using CycleCalculator.CycleModel.Model.BaseComponents;
 using CycleCalculator.CycleModel.Model.Connectors;
 
 namespace CycleCalculatorUi.Core.Catalog;
@@ -46,5 +47,8 @@ internal static class Typed
     }
 
     public static Func<CycleComponent, IEnumerable<OutputValue>> Outputs<T>(Func<T, IEnumerable<OutputValue>> read)
+        where T : CycleComponent => component => read((T)component);
+
+    public static Func<CycleComponent, TemperatureProfile> Profile<T>(Func<T, TemperatureProfile> read)
         where T : CycleComponent => component => read((T)component);
 }

@@ -1,4 +1,4 @@
-using CycleCalculator.CycleModel.Fluids;
+﻿using CycleCalculator.CycleModel.Fluids;
 using CycleCalculator.CycleModel.Model;
 using CycleCalculator.CycleModel.Model.BaseComponents;
 using CycleCalculator.CycleModel.Solver;
@@ -27,6 +27,32 @@ public class SolveTests
         Assert.That(Port(document, result, "Split2", "Outlet").MassFlow, Is.EqualTo(-1).Within(1e-9));
         Assert.That(Port(document, result, "Comp1", "Inlet").Pressure, Is.EqualTo(45).Within(1e-9));
         Assert.That(Port(document, result, "Evaporator", "Outlet").Pressure, Is.EqualTo(20).Within(1e-9));
+    }
+
+    [Test]
+    public async Task EjectorExample_HeatExchangersReportTemperatureProfiles()
+    {
+        SystemDocument document = ExampleSystems.EjectorHeatPump();
+        SolveResult result = await _service.SolveAsync(document);
+        Assert.That(result.Success, Is.True, result.Message);
+
+        foreach (NodeModel node in document.Nodes.Where(n => n.TypeId.Contains("HeatExchanger")))
+        {
+            TemperatureProfile profile = result.TemperatureProfiles[node.Id];
+            PortResult inlet1 = result.Port(node.Id, "Inlet")!, outlet1 = result.Port(node.Id, "Outlet")!;
+            PortResult inlet2 = result.Port(node.Id, "Inlet2")!, outlet2 = result.Port(node.Id, "Outlet2")!;
+
+            Assert.That(profile.Count, Is.EqualTo(100), node.Name);
+            Assert.That(profile.Temperature1[0], Is.EqualTo(inlet1.Temperature).Within(1e-3), node.Name);
+            Assert.That(profile.Temperature1[^1], Is.EqualTo(outlet1.Temperature).Within(1e-3), node.Name);
+            Assert.That(profile.Temperature2[0], Is.EqualTo(outlet2.Temperature).Within(1e-3), node.Name);
+            Assert.That(profile.Temperature2[^1], Is.EqualTo(inlet2.Temperature).Within(1e-3), node.Name);
+            Assert.That(profile.HeatTransfer[^1],
+                Is.EqualTo(Math.Abs(inlet1.MassFlow * (outlet1.Enthalpy - inlet1.Enthalpy))).Within(1e-6), node.Name);
+        }
+
+        Assert.That(document.Nodes.Where(n => !result.TemperatureProfiles.ContainsKey(n.Id))
+            .Select(n => n.TypeId), Has.None.Contains("HeatExchanger"));
     }
 
     [Test]

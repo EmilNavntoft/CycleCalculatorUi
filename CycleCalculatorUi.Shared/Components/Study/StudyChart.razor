@@ -1,5 +1,6 @@
-@* Line chart of one study result against one varied parameter; the other parameters give one line each. *@
+﻿@* Line chart of one study result against one varied parameter; the other parameters give one line each. *@
 @using System.Globalization
+@using static CycleCalculatorUi.Shared.Components.ChartAxis
 
 @if (_series.Count == 0 || _yMin is null)
 {
@@ -143,35 +144,9 @@ else
             return;
         }
 
-        (_xMin, _xMax, _xStep, _xTicks) = Scale(xs.Min(), xs.Max(), false);
-        (double yMin, double yMax, _yStep, _yTicks) = Scale(ys.Min(), ys.Max(), true);
+        (_xMin, _xMax, _xStep, _xTicks) = ChartAxis.Scale(xs.Min(), xs.Max(), false);
+        (double yMin, double yMax, _yStep, _yTicks) = ChartAxis.Scale(ys.Min(), ys.Max(), true);
         (_yMin, _yMax) = (yMin, yMax);
-    }
-
-    /// <summary>A rounded range with about five ticks. The y range pads a little so dots do not sit on the frame.</summary>
-    private static (double Min, double Max, double Step, IReadOnlyList<double> Ticks) Scale(double min, double max, bool pad)
-    {
-        if (max - min < 1e-12 * Math.Max(1, Math.Abs(max)))
-        {
-            double half = Math.Max(Math.Abs(min) * 0.05, 1e-6);
-            min -= half;
-            max += half;
-        }
-
-        double step = NiceStep((max - min) / 5);
-        double lo = pad ? Math.Floor(min / step) * step : min;
-        double hi = pad ? Math.Ceiling(max / step) * step : max;
-        List<double> ticks = [];
-        for (double t = Math.Ceiling(lo / step - 1e-9) * step; t <= hi + step * 1e-9; t += step)
-            ticks.Add(Math.Abs(t) < step * 1e-9 ? 0 : t);
-        return (lo, hi, step, ticks);
-    }
-
-    private static double NiceStep(double raw)
-    {
-        double magnitude = Math.Pow(10, Math.Floor(Math.Log10(raw)));
-        double fraction = raw / magnitude;
-        return (fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 2.5 ? 2.5 : fraction <= 5 ? 5 : 10) * magnitude;
     }
 
     private double X(double value) => L + (value - _xMin) / (_xMax - _xMin) * PlotW;
@@ -199,14 +174,4 @@ else
     }
 
     private static string WithUnit(string unit) => unit is "-" ? "" : unit;
-
-    private static string N(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
-
-    private static string Tick(double value, double step)
-    {
-        int decimals = Math.Max(0, (int)Math.Ceiling(-Math.Log10(step) - 1e-9));
-        if (step * Math.Pow(10, decimals) % 1 > 1e-9)
-            decimals++;
-        return value.ToString("F" + Math.Min(decimals, 8), CultureInfo.InvariantCulture);
-    }
 }

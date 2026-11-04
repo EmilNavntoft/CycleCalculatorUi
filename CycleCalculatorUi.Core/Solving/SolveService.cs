@@ -1,4 +1,5 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
+using CycleCalculator.CycleModel.Model;
 using CycleCalculator.CycleModel.Model.BaseComponents;
 using CycleCalculator.CycleModel.Model.Connectors;
 using CycleCalculator.CycleModel.Solver;
@@ -34,6 +35,10 @@ public sealed class SolveResult
     /// <summary>Node id → component outputs such as a valve's outlet pressure.</summary>
     public IReadOnlyDictionary<string, IReadOnlyList<OutputValue>> Outputs { get; init; } =
         new Dictionary<string, IReadOnlyList<OutputValue>>();
+
+    /// <summary>Node id → temperatures of both streams along a heat exchanger.</summary>
+    public IReadOnlyDictionary<string, TemperatureProfile> TemperatureProfiles { get; init; } =
+        new Dictionary<string, TemperatureProfile>();
 
     /// <summary>Fingerprint of the document that was solved; compare to detect stale results.</summary>
     public string Fingerprint { get; init; } = "";
@@ -151,6 +156,7 @@ public sealed class SolveService
             Issues = build.Issues,
             Ports = ReadPorts(snapshot, build),
             Outputs = ReadOutputs(snapshot, build),
+            TemperatureProfiles = outcome.Converged ? ReadTemperatureProfiles(snapshot, build) : [],
             Fingerprint = fingerprint,
             ResidualHistory = recorder.Finish()
         };
@@ -237,6 +243,26 @@ public sealed class SolveService
             catch (Exception)
             {
                 // Outputs are extra information; a component that cannot report them should not fail the solve.
+            }
+        }
+
+        return results;
+    }
+
+    private Dictionary<string, TemperatureProfile> ReadTemperatureProfiles(SystemDocument document, BuildResult build)
+    {
+        Dictionary<string, TemperatureProfile> results = [];
+        foreach (NodeModel node in document.Nodes)
+        {
+            if (_catalog.Get(node.TypeId).ReadTemperatureProfile is not { } read)
+                continue;
+            try
+            {
+                results[node.Id] = read(build.ComponentsByNode[node.Id]);
+            }
+            catch (Exception)
+            {
+                // A profile is extra information; a failed property call should not fail the solve.
             }
         }
 

@@ -1,4 +1,4 @@
-@* Calculated port states and component outputs of one node. *@
+﻿@* Calculated port states and component outputs of one node. *@
 @if (State.Result is { HasResults: true } result && result.Ports.TryGetValue(Node.Id, out var ports))
 {
     <section class="inspector-section results @(State.IsResultStale ? "stale" : "")">
@@ -34,6 +34,11 @@
                     <dd>@Format.Number(output.Value, 5) @output.Unit</dd>
                 }
             </dl>
+        }
+        @if (result.TemperatureProfiles.TryGetValue(Node.Id, out var profile))
+        {
+            <h3 class="subheading">Temperature profile</h3>
+            <TemperatureProfileChart Profile="profile" Streams="Descriptor.Streams"/>
         }
     </section>
 }

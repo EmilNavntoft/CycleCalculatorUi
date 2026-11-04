@@ -658,7 +658,8 @@ public static class BuiltInComponents
                 new OutputValue("Effectiveness", h.Efficiency, "-"),
                 new OutputValue("Heat flow", Math.Abs(h.Inlet.MassFlow * (h.Outlet.Enthalpy - h.Inlet.Enthalpy)), "kW"),
                 new OutputValue("Temperature error", h.TemperatureError, "K")
-            ])
+            ]),
+            ReadTemperatureProfile = Typed.Profile<FixedEfficiencyHeatExchanger>(h => h.GetTemperatureProfile())
         };
     }
 
@@ -712,7 +713,8 @@ public static class BuiltInComponents
         EnergyKind = EnergyKind.Exchanger,
         GetPort = Typed.Ports<FixedUaHeatExchanger>(("Inlet", h => h.Inlet), ("Outlet", h => h.Outlet),
             ("Inlet2", h => h.Inlet2), ("Outlet2", h => h.Outlet2)),
-        ReadOutputs = Typed.Outputs<FixedUaHeatExchanger>(h => [new OutputValue("Heat flow", h.HeatTransferRate, "kW")])
+        ReadOutputs = Typed.Outputs<FixedUaHeatExchanger>(h => [new OutputValue("Heat flow", h.HeatTransferRate, "kW")]),
+        ReadTemperatureProfile = Typed.Profile<FixedUaHeatExchanger>(h => h.GetTemperatureProfile())
     };
 
     public static ComponentDescriptor FixedUaEvaporator() => new()
@@ -753,7 +755,8 @@ public static class BuiltInComponents
             new OutputValue("Evaporating pressure", e.EvaporatingPressure, "bar"),
             new OutputValue("Secondary mass flow", e.SecondaryMassFlow, "kg/s"),
             new OutputValue("Cooling capacity", Math.Abs(e.Inlet.MassFlow * (e.Outlet.Enthalpy - e.Inlet.Enthalpy)), "kW")
-        ])
+        ]),
+        ReadTemperatureProfile = Typed.Profile<FixedUaEvaporator>(e => e.GetTemperatureProfile())
     };
 
     /// <summary>Stream 1 runs left to right along the top, stream 2 right to left along the bottom.</summary>
