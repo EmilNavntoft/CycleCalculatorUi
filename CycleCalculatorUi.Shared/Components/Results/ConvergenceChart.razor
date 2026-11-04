@@ -1,0 +1,111 @@
+@* Largest scaled residual against solver iteration, on a log scale. Updates live while the solver runs. *@
+@using CycleCalculator.CycleModel.Solver
+
+<div class="convergence">
+    @if (History.Count == 0)
+    {
+        <p class="muted">@(IsSolving ? "Waiting for the first solver iterations…" : "Press Calculate to see how the solver converges.")</p>
+    }
+    else
+    {
+        SolverIteration last = History[^1];
+        <p class="convergence-summary">
+            <span>Iteration <strong>@last.Iteration</strong></span>
+            <span>Max residual <strong>@last.MaxResidual.ToString("0.00e+0", CultureInfo.InvariantCulture)</strong></span>
+            <span class="muted">@(IsSolving ? "Solving…" : $"Target below {Tolerance:0e+0}")</span>
+        </p>
+        <svg class="study-chart" viewBox="0 0 @W @H" preserveAspectRatio="xMidYMid meet" role="img"
+             aria-label="Maximum residual against iteration">
+            @for (int decade = _decadeMin; decade <= _decadeMax; decade++)
+            {
+                double y = Y(decade);
+                <g>
+                    <line class="grid" x1="@L" x2="@(L + PlotW)" y1="@N(y)" y2="@N(y)"/>
+                    <text class="tick" x="@(L - 6)" y="@N(y + 3.5)" text-anchor="end">1e@(decade)</text>
+                </g>
+            }
+            @foreach (double x in _xTicks)
+            {
+                <g><text class="tick" x="@N(X(x))" y="@(T + PlotH + 14)" text-anchor="middle">@x.ToString("0", CultureInfo.InvariantCulture)</text></g>
+            }
+            <line class="axis" x1="@L" x2="@(L + PlotW)" y1="@(T + PlotH)" y2="@(T + PlotH)"/>
+            <line class="crosshair" x1="@L" x2="@(L + PlotW)" y1="@N(Y(Math.Log10(Tolerance)))" y2="@N(Y(Math.Log10(Tolerance)))"/>
+            <text class="tick" x="@(L + PlotW - 4)" y="@N(Y(Math.Log10(Tolerance)) - 4)" text-anchor="end">tolerance</text>
+            <text class="axis-title" x="@(L + PlotW / 2)" y="@(H - 4)" text-anchor="middle">Iteration</text>
+            <text class="axis-title" transform="translate(13 @(T + PlotH / 2)) rotate(-90)" text-anchor="middle">Max scaled residual</text>
+            <path class="series-line" d="@_path" style="stroke: var(--series-1)"/>
+            <circle class="series-dot" cx="@N(X(last.Iteration))" cy="@N(Y(Log(last.MaxResidual)))" r="4" style="fill: var(--series-1)"/>
+        </svg>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<SolverIteration> History { get; set; } = [];
+
+    [Parameter] public bool IsSolving { get; set; }
+
+    /// <summary>The solver's residual tolerance (NonlinearLeastSquaresSolver.ResidualTolerance).</summary>
+    private const double Tolerance = 1e-6;
+
+    /// <summary>Residuals of exactly zero are drawn at this floor so the log scale stays finite.</summary>
+    private const int FloorDecade = -16;
+
+    private const double W = 1000, H = 280, L = 64, T = 10, R = 16, B = 38;
+    private const double PlotW = W - L - R, PlotH = H - T - B;
+
+    private int _decadeMin, _decadeMax;
+    private double _xMax;
+    private IReadOnlyList<double> _xTicks = [];
+    private string _path = "";
+
+    protected override void OnParametersSet()
+    {
+        if (History.Count == 0)
+            return;
+
+        List<double> logs = History.Select(i => i.MaxResidual).Where(double.IsFinite).Select(Log).ToList();
+        // Keep the tolerance in view so the distance to convergence is visible.
+        double tolerance = Math.Log10(Tolerance);
+        _decadeMin = (int)Math.Floor(Math.Min(tolerance, logs.DefaultIfEmpty(tolerance).Min()));
+        _decadeMax = (int)Math.Ceiling(Math.Max(tolerance + 1, logs.DefaultIfEmpty(tolerance).Max()));
+
+        // Round the iteration axis up so a live chart does not rescale on every update.
+        double step = NiceStep(Math.Max(10, History[^1].Iteration) / 5.0);
+        _xMax = Math.Ceiling(Math.Max(10, History[^1].Iteration) / step) * step;
+        List<double> ticks = [];
+        for (double t = 0; t <= _xMax + step * 1e-9; t += step)
+            ticks.Add(t);
+        _xTicks = ticks;
+
+        System.Text.StringBuilder path = new();
+        bool pen = false;
+        foreach (SolverIteration iteration in History)
+        {
+            if (!double.IsFinite(iteration.MaxResidual))
+            {
+                pen = false;
+                continue;
+            }
+
+            path.Append(pen ? 'L' : 'M').Append(N(X(iteration.Iteration))).Append(' ').Append(N(Y(Log(iteration.MaxResidual))));
+            pen = true;
+        }
+
+        _path = path.ToString();
+    }
+
+    private static double Log(double residual) => Math.Max(FloorDecade, Math.Log10(Math.Max(residual, 0)));
+
+    private static double NiceStep(double raw)
+    {
+        double magnitude = Math.Pow(10, Math.Floor(Math.Log10(raw)));
+        double fraction = raw / magnitude;
+        return (fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10) * magnitude;
+    }
+
+    private double X(double iteration) => L + iteration / _xMax * PlotW;
+
+    private double Y(double log10) => T + PlotH - (log10 - _decadeMin) / Math.Max(1, _decadeMax - _decadeMin) * PlotH;
+
+    private static string N(double value) => value.ToString("0.#", CultureInfo.InvariantCulture);
+}

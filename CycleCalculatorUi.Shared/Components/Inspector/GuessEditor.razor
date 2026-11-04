@@ -1,0 +1,132 @@
+@* Solver start guesses of one node: where each applies, the quantity and the value. *@
+@using CycleCalculator.CycleModel.Model.BaseComponents
+@{
+    IReadOnlyList<GuessScope> scopes = StartGuesses.Scopes(Descriptor);
+    bool hasResult = State.Result is { HasResults: true } && State.Result.Ports.ContainsKey(Node.Id);
+}
+<section class="inspector-section">
+    <h3>
+        Start guesses
+        @if (Node.Guesses.Count > 0)
+        {
+            <span class="muted">@Node.Guesses.Count</span>
+        }
+    </h3>
+    @if (Node.Guesses.Count == 0)
+    {
+        <div class="field-help guess-intro">
+            Optional values the solver starts from. They do not fix the solution, but help when it fails to converge.
+        </div>
+    }
+    <div class="repeat-group">
+        @for (int i = 0; i < Node.Guesses.Count; i++)
+        {
+            int index = i;
+            GuessModel guess = Node.Guesses[index];
+            GuessScope scope = StartGuesses.ScopeOf(Descriptor, guess);
+            int scopeIndex = scopes.ToList().FindIndex(s => s.Matches(guess));
+            GuessQuantityInfo info = StartGuesses.Info(guess.Quantity);
+            double? resultValue = StartGuesses.FromResult(scope, guess.Quantity, Node, Descriptor, State.Result);
+            <fieldset class="repeat-item guess" @key="(Node.Id, index)">
+                <legend>
+                    <span>Guess @(index + 1)</span>
+                    <button type="button" class="ghost danger small" title="Remove this start guess"
+                            @onclick="() => State.RemoveGuess(Node.Id, index)">Remove</button>
+                </legend>
+                <div class="guess-selects">
+                    <select aria-label="Applies to" title="Where the guess applies" value="@scopeIndex"
+                            @onchange="e => SetScope(index, guess, scopes, e.Value)">
+                        @if (scopeIndex < 0)
+                        {
+                            <option value="-1">@scope.Label</option>
+                        }
+                        @for (int s = 0; s < scopes.Count; s++)
+                        {
+                            <option value="@s">@scopes[s].Label</option>
+                        }
+                    </select>
+                    <select aria-label="Quantity" value="@guess.Quantity"
+                            @onchange="e => SetQuantity(index, guess, scope, e.Value)">
+                        @foreach (GuessQuantityInfo quantity in StartGuesses.Quantities)
+                        {
+                            <option value="@quantity.Quantity">@quantity.Label</option>
+                        }
+                    </select>
+                </div>
+                <NumberField Label="@info.Label" Unit="@info.Unit" Value="guess.Value"
+                             Error="@Error(index)" Help="@Help(guess)"
+                             ValueChanged="v => { if (v is { } value) State.SetGuess(Node.Id, index, guess with { Value = value }); }">
+                    <LabelAction>
+                        @if (resultValue is { } fromResult && !Same(fromResult, guess.Value))
+                        {
+                            <button type="button" class="link small" title="Use the value from the last calculation"
+                                    @onclick="() => State.SetGuess(Node.Id, index, guess with { Value = fromResult })">
+                                use result @Format.Number(fromResult, 4)
+                            </button>
+                        }
+                    </LabelAction>
+                </NumberField>
+            </fieldset>
+        }
+        <button type="button" class="ghost add-item" @onclick="() => State.AddGuess(Node.Id)">+ Add start guess</button>
+    </div>
+    @if (hasResult || Node.Guesses.Count > 0)
+    {
+        <div class="button-row">
+            @if (hasResult)
+            {
+                <button type="button" class="ghost small"
+                        title="Replace the guesses with the pressure, enthalpy and mass flow of every port from the last calculation"
+                        @onclick="() => State.SetGuessesFromResult(Node.Id)">All from last result</button>
+            }
+            @if (Node.Guesses.Count > 0)
+            {
+                <button type="button" class="ghost danger small" @onclick="() => State.ClearGuesses(Node.Id)">Clear all</button>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public EditorState State { get; set; } = null!;
+    [Parameter, EditorRequired] public NodeModel Node { get; set; } = null!;
+    [Parameter, EditorRequired] public ComponentDescriptor Descriptor { get; set; } = null!;
+
+    private void SetScope(int index, GuessModel guess, IReadOnlyList<GuessScope> scopes, object? value)
+    {
+        if (!int.TryParse(value?.ToString(), out int s) || s < 0 || s >= scopes.Count)
+            return;
+        GuessScope scope = scopes[s];
+        State.SetGuess(Node.Id, index, guess with { PortKey = scope.PortKey, Stream = scope.PortKey is null ? scope.Stream : null });
+    }
+
+    private void SetQuantity(int index, GuessModel guess, GuessScope scope, object? value)
+    {
+        if (!Enum.TryParse(value?.ToString(), out GuessQuantity quantity) || quantity == guess.Quantity)
+            return;
+        // A value in another quantity is meaningless, so start from the result or a typical value.
+        State.SetGuess(Node.Id, index, StartGuesses.Create(scope, quantity, Node, Descriptor, State.Result));
+    }
+
+    private string? Error(int index)
+    {
+        string key = StartGuesses.IssueKey(index);
+        string? message = State.IssuesFor(Node.Id).FirstOrDefault(i => i.ParameterKey == key)?.Message;
+        if (message is null)
+            return null;
+        // The field sits under its guess, so the "Name: start guess n: " prefix is redundant.
+        string prefix = $"{Node.Name}: start guess {index + 1}: ";
+        return message.StartsWith(prefix, StringComparison.Ordinal) ? message[prefix.Length..] : message;
+    }
+
+    private static string? Help(GuessModel guess) => guess.Quantity switch
+    {
+        GuessQuantity.MassFlow when guess.PortKey is not null => "Positive when the flow enters the component.",
+        GuessQuantity.MassFlow => "Flow through the component.",
+        GuessQuantity.SaturationTemperature => "Converted to a pressure guess.",
+        GuessQuantity.Temperature or GuessQuantity.Quality => "Converted to an enthalpy at the estimated pressure.",
+        _ => null
+    };
+
+    private static bool Same(double a, double b) => Math.Abs(a - b) <= 1e-9 * Math.Max(1, Math.Abs(a));
+}
