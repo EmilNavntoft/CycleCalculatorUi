@@ -346,6 +346,18 @@ public static class BuiltInComponents
                     Unit = "K", DefaultNumber = 10, Min = 0,
                     Help = "Suction superheat at which the polynomials were measured."
                 },
+                new ParameterDescriptor("nominalFrequency", "Nominal frequency", ParameterKind.Number)
+                {
+                    Group = Group, Unit = "Hz", DefaultNumber = En12900Polynomial.DefaultNominalFrequency,
+                    Min = 0, MinExclusive = true,
+                    Help = "Compressor frequency at which the polynomials were measured."
+                },
+                new ParameterDescriptor("operatingFrequency", "Operating frequency", ParameterKind.Number)
+                {
+                    Group = Group, Unit = "Hz", Optional = true, Min = 0, MinExclusive = true,
+                    Help = "Optional. Mass flow, power and current scale linearly with operating / nominal " +
+                           "frequency. Leave empty to run at the nominal frequency."
+                },
                 new ParameterDescriptor("massFlowUnit", "Mass flow polynomial unit", ParameterKind.Choice)
                 {
                     DefaultChoice = nameof(En12900MassFlowUnit.KilogramsPerHour),
@@ -395,10 +407,12 @@ public static class BuiltInComponents
                 En12900CompressorMap[] maps = Enumerable.Range(0, c.Count(Group)).Select(index =>
                 {
                     double[]? current = c.OptionalCoefficients(RepeatGroupDescriptor.ItemKey("currentPolynomial", index));
+                    double nominalFrequency = c.Number(RepeatGroupDescriptor.ItemKey("nominalFrequency", index));
                     return new En12900CompressorMap(
-                        new En12900Polynomial(c.Coefficients(RepeatGroupDescriptor.ItemKey("massFlowPolynomial", index)), superheat),
-                        new En12900Polynomial(c.Coefficients(RepeatGroupDescriptor.ItemKey("powerPolynomial", index)), superheat),
-                        current is null ? null : new En12900Polynomial(current, superheat));
+                        new En12900Polynomial(c.Coefficients(RepeatGroupDescriptor.ItemKey("massFlowPolynomial", index)), superheat, nominalFrequency),
+                        new En12900Polynomial(c.Coefficients(RepeatGroupDescriptor.ItemKey("powerPolynomial", index)), superheat, nominalFrequency),
+                        current is null ? null : new En12900Polynomial(current, superheat, nominalFrequency),
+                        c.OptionalNumber(RepeatGroupDescriptor.ItemKey("operatingFrequency", index)));
                 }).ToArray();
                 return new En12900Compressor(c.Name, c.Fluid(), c.Backend(), maps,
                     Enum.Parse<En12900MassFlowUnit>(c.Choice("massFlowUnit")),
