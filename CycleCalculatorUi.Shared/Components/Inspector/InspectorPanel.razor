@@ -1,4 +1,4 @@
-@* Properties of the selection, generated from the component descriptors. *@
+﻿@* Properties of the selection, generated from the component descriptors. *@
 <aside class="panel inspector">
     @if (State.SelectedNode is { } node && State.Catalog.Find(node.TypeId) is { } descriptor)
     {
@@ -178,7 +178,7 @@
                 <li>Drag components from the library onto the canvas.</li>
                 <li>Drag from one port to another to connect them, or click both ports.</li>
                 <li>Drag a line or one of its corners to reroute it.</li>
-                <li>Connect a valve's top port to any fluid port to control on its temperature or superheat.</li>
+                <li>Connect a valve's top port to any fluid port to control on its temperature, superheat or mass flow.</li>
                 <li>Pan with the right or middle mouse button, zoom with the wheel.</li>
                 <li><kbd>R</kbd> rotate, <kbd>F</kbd> flip, <kbd>Del</kbd> delete, <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo.</li>
             </ul>

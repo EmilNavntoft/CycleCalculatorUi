@@ -1,4 +1,4 @@
-using CycleCalculator.CycleModel.Conversion;
+﻿using CycleCalculator.CycleModel.Conversion;
 using CycleCalculator.CycleModel.Fluids;
 using CycleCalculator.CycleModel.Model;
 using CycleCalculator.CycleModel.Model.Connectors;
@@ -160,7 +160,7 @@ public static class BuiltInComponents
 
     public static ComponentDescriptor ExpansionValve()
     {
-        static bool Controlled(NodeModel node) => ChoiceIs(node, "mode", "temperature", "superheat");
+        static bool Controlled(NodeModel node) => ChoiceIs(node, "mode", "temperature", "superheat", "massFlow");
 
         return new ComponentDescriptor
         {
@@ -168,8 +168,8 @@ public static class BuiltInComponents
             DisplayName = "Expansion valve",
             Category = Categories.Valves,
             NamePrefix = "EXV",
-            Description = "Isenthalpic expansion. The outlet pressure is fixed, controlled to a temperature or " +
-                          "superheat measured through the signal input, or left free.",
+            Description = "Isenthalpic expansion. The outlet pressure is fixed, controlled to a temperature, " +
+                          "superheat or mass flow measured through the signal input, or left free.",
             Ports =
             [
                 .. Inline(),
@@ -188,6 +188,7 @@ public static class BuiltInComponents
                         new ChoiceOption("fixed", "Fixed outlet pressure"),
                         new ChoiceOption("temperature", "Temperature setpoint"),
                         new ChoiceOption("superheat", "Superheat setpoint"),
+                        new ChoiceOption("massFlow", "Mass flow setpoint"),
                         new ChoiceOption("free", "Free (set by other components)")
                     ]
                 },
@@ -208,6 +209,13 @@ public static class BuiltInComponents
                     Help = "Superheat of the measured port that the valve controls to.",
                     IsActive = node => ChoiceIs(node, "mode", "superheat")
                 },
+                new ParameterDescriptor("massFlowSetpoint", "Mass flow setpoint", ParameterKind.Number)
+                {
+                    Unit = "kg/s", DefaultNumber = 0.1, Min = 0,
+                    Help = "Mass flow through the measured port that the valve controls to, counted positive in " +
+                           "the port's design direction (into an inlet, out of an outlet).",
+                    IsActive = node => ChoiceIs(node, "mode", "massFlow")
+                },
                 new ParameterDescriptor("minOutletPressure", "Min. outlet pressure", ParameterKind.Number)
                 {
                     Unit = "bar", Optional = true, Min = 0, MinExclusive = true, IsActive = Controlled
@@ -215,21 +223,39 @@ public static class BuiltInComponents
                 new ParameterDescriptor("maxOutletPressure", "Max. outlet pressure", ParameterKind.Number)
                 {
                     Unit = "bar", Optional = true, Min = 0, MinExclusive = true, IsActive = Controlled
-                }
+                },
+                new ParameterDescriptor("controlSign", "Control direction", ParameterKind.Choice)
+                {
+                    DefaultChoice = "auto",
+                    Options =
+                    [
+                        new ChoiceOption("auto", "Automatic"),
+                        new ChoiceOption("positive", "Higher outlet pressure raises measured value (+1)"),
+                        new ChoiceOption("negative", "Higher outlet pressure lowers measured value (−1)")
+                    ],
+                    IsActive = Controlled,
+                    Help = "Sign of the measured value's response to the outlet pressure, e.g. lowers for a mass " +
+                           "flow measured through the valve. Automatic lets the solver determine it from the initial guess."
+                },
             ],
             Create = c => new ExpansionValve(c.Name, c.Fluid(), c.Backend(),
                 outletPressure: c.OptionalNumber("outletPressure"),
                 temperatureSetpoint: c.OptionalNumber("temperatureSetpoint"),
                 minOutletPressure: c.OptionalNumber("minOutletPressure"),
                 maxOutletPressure: c.OptionalNumber("maxOutletPressure"),
-                superheatSetpoint: c.OptionalNumber("superheatSetpoint")),
+                superheatSetpoint: c.OptionalNumber("superheatSetpoint"),
+                massFlowSetpoint: c.OptionalNumber("massFlowSetpoint"),
+                controlSign: Controlled(c.Node)
+                    ? c.Choice("controlSign") switch { "positive" => 1, "negative" => -1, _ => null }
+                    : null),
             GetPort = Typed.Ports<ExpansionValve>(("Inlet", v => v.Inlet), ("Outlet", v => v.Outlet)),
             GetSignalPort = Typed.SignalPorts<ExpansionValve>(("Signal", v => v.SignalPort)),
             ReadOutputs = Typed.Outputs<ExpansionValve>(v =>
             [
                 new OutputValue("Outlet pressure", v.OutletPressure, "bar"),
                 new OutputValue("Temperature error", v.TemperatureError, "K"),
-                new OutputValue("Superheat error", v.SuperheatError, "K")
+                new OutputValue("Superheat error", v.SuperheatError, "K"),
+                new OutputValue("Mass flow error", v.MassFlowError, "kg/s")
             ])
         };
     }

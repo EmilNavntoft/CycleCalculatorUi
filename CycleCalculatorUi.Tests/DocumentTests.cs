@@ -1,4 +1,4 @@
-using CycleCalculator.CycleModel.Fluids;
+﻿using CycleCalculator.CycleModel.Fluids;
 using CycleCalculatorUi.Core.Building;
 using CycleCalculatorUi.Core.Catalog;
 using CycleCalculatorUi.Core.Document;
@@ -78,6 +78,35 @@ public class DocumentTests
 
         Assert.That(new ModelBuilder(Catalog).Validate(document), Is.Empty);
         Assert.That(new ModelBuilder(Catalog).Build(document).Success, Is.True);
+    }
+
+    [Test]
+    public void MassFlowControlledValve_RequiresSignal_AndBuilds()
+    {
+        SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
+        NodeModel valve = document.Nodes.Single(n => n.TypeId == "ExpansionValve");
+        valve.Choices["mode"] = "massFlow";
+        valve.Numbers["massFlowSetpoint"] = 0.05;
+
+        ValidationIssue issue = new ModelBuilder(Catalog).Validate(document).Single();
+        Assert.That((issue.NodeId, issue.PortKey), Is.EqualTo((valve.Id, "Signal")));
+
+        NodeModel evaporator = document.Nodes.Single(n => n.Name == "Evaporator");
+        document.Connections.Add(new ConnectionModel
+        {
+            Kind = ConnectionKind.Signal, From = new PortRef(evaporator.Id, "Outlet"), To = new PortRef(valve.Id, "Signal")
+        });
+
+        Assert.That(new ModelBuilder(Catalog).Validate(document), Is.Empty);
+        Assert.That(new ModelBuilder(Catalog).Build(document).Success, Is.True);
+
+        valve.Numbers["massFlowSetpoint"] = 0;
+        valve.Choices["controlSign"] = "negative";
+        Assert.That(new ModelBuilder(Catalog).Validate(document), Is.Empty);
+        Assert.That(new ModelBuilder(Catalog).Build(document).Success, Is.True);
+
+        valve.Numbers["massFlowSetpoint"] = -0.1;
+        Assert.That(new ModelBuilder(Catalog).Validate(document).Single().ParameterKey, Is.EqualTo("massFlowSetpoint"));
     }
 
     [Test]
