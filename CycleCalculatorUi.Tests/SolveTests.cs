@@ -74,6 +74,34 @@ public class SolveTests
     }
 
     [Test]
+    public void Solver_StopsWhenCancelledMidSolve()
+    {
+        using CancellationTokenSource cts = new();
+        int evaluations = 0;
+        double[] Residuals(double[] x)
+        {
+            if (++evaluations == 5)
+                cts.Cancel();
+            return [x[0] * x[0] - 2, x[1] - x[0]];
+        }
+
+        Assert.Throws<OperationCanceledException>(() => NonlinearLeastSquaresSolver.SolveBounded(
+            Residuals, [10, 0], 2, [double.NegativeInfinity, double.NegativeInfinity],
+            [double.PositiveInfinity, double.PositiveInfinity], cancellationToken: cts.Token));
+        Assert.That(evaluations, Is.LessThanOrEqualTo(6));
+    }
+
+    [Test]
+    public async Task CancelledSolve_ReturnsCancelledResult()
+    {
+        using CancellationTokenSource cts = new();
+        cts.Cancel();
+        SolveResult result = await _service.SolveAsync(ExampleSystems.TwoStageWithParallelCompressor(), cts.Token);
+
+        Assert.That(result.Success, Is.False);
+    }
+
+    [Test]
     public async Task ReceiverExample_Solves()
     {
         SystemDocument document = ExampleSystems.Co2WithReceiver();

@@ -44,8 +44,8 @@ public sealed class SolveResult
 
 public sealed class SolveOptions
 {
-    /// <summary>Stop waiting for the solver after this time. The backend cannot be interrupted, so the
-    /// abandoned solve still finishes in the background but its result is discarded.</summary>
+    /// <summary>Cancel the solver after this time. The backend stops at its next cancellation check (between
+    /// solver iterations), so a single slow property call can still finish in the background.</summary>
     public TimeSpan Timeout { get; init; } = TimeSpan.FromSeconds(60);
 
     /// <summary>Maximum number of solves running at once (protects a shared web server).</summary>
@@ -89,16 +89,33 @@ public sealed class SolveService
             };
         }
 
-        await _slots.WaitAsync(cancellationToken);
+        try
+        {
+            await _slots.WaitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return Failure("The calculation was cancelled.");
+        }
+
+        // Cancels the backend solve when the caller cancels or the timeout elapses.
+        CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        stop.CancelAfter(_options.Timeout);
+        Task<SolveOutcome> solve = Task.Run(() => Orchestrator.TrySolve(build.Components, stop.Token),
+            CancellationToken.None);
         // Free the slot when the solver really finishes, even if we stopped waiting for it earlier.
-        Task<SolveOutcome> solve = Task.Run(() => Orchestrator.TrySolve(build.Components), CancellationToken.None);
-        _ = solve.ContinueWith(_ => _slots.Release(), TaskScheduler.Default);
+        _ = solve.ContinueWith(_ =>
+        {
+            stop.Dispose();
+            _slots.Release();
+        }, TaskScheduler.Default);
         SolveOutcome outcome;
         try
         {
-            outcome = await solve.WaitAsync(_options.Timeout, cancellationToken);
+            // Return as soon as cancellation is requested rather than waiting for the backend's next check.
+            outcome = await solve.WaitAsync(stop.Token);
         }
-        catch (TimeoutException)
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             return Failure($"The solver did not finish within {_options.Timeout.TotalSeconds:0} s.");
         }
