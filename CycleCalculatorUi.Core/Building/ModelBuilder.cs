@@ -65,6 +65,13 @@ public sealed class ModelBuilder(ComponentCatalog catalog)
 
             ValidateParameters(node, descriptor, issues);
 
+            for (int i = 0; i < node.Guesses.Count; i++)
+            {
+                if (StartGuesses.Check(node.Guesses[i], descriptor) is { } problem)
+                    issues.Add(new ValidationIssue(IssueSeverity.Error, $"{node.Name}: start guess {i + 1}: {problem}",
+                        node.Id, StartGuesses.IssueKey(i)));
+            }
+
             foreach (PortDescriptor port in descriptor.Ports.Where(port => port.Required(node)))
             {
                 if (!ConnectionRules.IsConnected(document, new PortRef(node.Id, port.Key)))
@@ -189,21 +196,37 @@ public sealed class ModelBuilder(ComponentCatalog catalog)
     private static void ApplyGuesses(NodeModel node, CycleComponent component, ComponentDescriptor descriptor,
         List<ValidationIssue> issues)
     {
-        foreach (GuessModel guess in node.Guesses)
+        for (int i = 0; i < node.Guesses.Count; i++)
         {
+            GuessModel guess = node.Guesses[i];
             try
             {
-                if (guess.PortKey is null)
-                    component.AddGuess(guess.Quantity, guess.Value);
-                else
+                if (guess.PortKey is not null)
                     component.AddGuess(guess.Quantity, guess.Value, descriptor.GetPort(component, guess.PortKey));
+                else if (guess.Stream is { } stream)
+                    component.AddGuess(guess.Quantity, guess.Value, StreamSide(component, descriptor, stream));
+                else
+                    component.AddGuess(guess.Quantity, guess.Value);
             }
             catch (ArgumentException ex)
             {
-                issues.Add(new ValidationIssue(IssueSeverity.Error, $"{node.Name}: {CleanMessage(ex)}", node.Id,
-                    PortKey: guess.PortKey));
+                issues.Add(new ValidationIssue(IssueSeverity.Error, $"{node.Name}: start guess {i + 1}: {CleanMessage(ex)}",
+                    node.Id, StartGuesses.IssueKey(i), guess.PortKey));
             }
         }
+    }
+
+    /// <summary>The fluid ports of one stream of a component, as a backend side for scoped guesses.</summary>
+    private static ComponentSide StreamSide(CycleComponent component, ComponentDescriptor descriptor, int stream)
+    {
+        Port[] ports = descriptor.Ports
+            .Where(p => p.Kind == PortKind.Fluid && p.Stream == stream)
+            .Select(p => descriptor.GetPort(component, p.Key))
+            .ToArray();
+        if (ports.Length == 0)
+            throw new ArgumentException($"{component.Name} has no ports on stream {stream + 1} for a start guess.");
+        string name = stream < descriptor.Streams.Count ? descriptor.Streams[stream] : $"Stream {stream + 1}";
+        return new ComponentSide(name, ports);
     }
 
     private static void ValidateParameters(NodeModel node, ComponentDescriptor descriptor, List<ValidationIssue> issues)

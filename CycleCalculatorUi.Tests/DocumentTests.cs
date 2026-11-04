@@ -126,12 +126,14 @@ public class DocumentTests
     {
         SystemDocument document = ExampleSystems.Co2WithReceiver();
         document.Nodes[0].Guesses.Add(new GuessModel(CycleCalculator.CycleModel.Model.BaseComponents.GuessQuantity.Pressure, 30, "Inlet"));
+        document.Nodes[0].Guesses.Add(new GuessModel(CycleCalculator.CycleModel.Model.BaseComponents.GuessQuantity.Temperature, 20, Stream: 0));
 
         string json = DocumentSerializer.Serialize(document);
         SystemDocument loaded = DocumentSerializer.Deserialize(json);
 
         Assert.That(DocumentSerializer.Serialize(loaded), Is.EqualTo(json));
         Assert.That(json, Does.Contain("\"Pressure\""));
+        Assert.That(loaded.Nodes[0].Guesses[1].Stream, Is.EqualTo(0));
     }
 
     [Test]

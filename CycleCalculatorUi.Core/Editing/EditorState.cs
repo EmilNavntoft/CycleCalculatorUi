@@ -1,3 +1,4 @@
+using CycleCalculator.CycleModel.Model.BaseComponents;
 using CycleCalculator.CycleModel.Solver;
 using CycleCalculatorUi.Core.Building;
 using CycleCalculatorUi.Core.Catalog;
@@ -489,6 +490,48 @@ public sealed class EditorState(ComponentCatalog catalog, SolveService solver)
     public EnergySummary? Energy => Result is { Success: true } result ? EnergyBalance.Compute(Document, Catalog, result) : null;
 
     public void SetEnergyRole(string nodeId, EnergyRole role) => EditNode(nodeId, node => node.EnergyRole = role);
+
+    #endregion
+
+    #region start guesses
+
+    /// <summary>Adds a start guess to a node, valued from the latest result when possible.</summary>
+    public void AddGuess(string nodeId)
+    {
+        if (Document.FindNode(nodeId) is not { } node || Catalog.Find(node.TypeId) is not { } descriptor)
+            return;
+        GuessScope scope = StartGuesses.Scopes(descriptor)[0];
+        // Suggest a quantity this scope does not have a guess for yet.
+        GuessQuantity quantity = StartGuesses.Quantities.Select(q => q.Quantity)
+            .FirstOrDefault(q => !node.Guesses.Any(g => g.Quantity == q && scope.Matches(g)), GuessQuantity.Pressure);
+        GuessModel guess = StartGuesses.Create(scope, quantity, node, descriptor, Result);
+        EditNode(nodeId, n => n.Guesses.Add(guess));
+    }
+
+    public void SetGuess(string nodeId, int index, GuessModel guess) => EditNode(nodeId, node =>
+    {
+        if (index >= 0 && index < node.Guesses.Count)
+            node.Guesses[index] = guess;
+    });
+
+    public void RemoveGuess(string nodeId, int index) => EditNode(nodeId, node =>
+    {
+        if (index >= 0 && index < node.Guesses.Count)
+            node.Guesses.RemoveAt(index);
+    });
+
+    /// <summary>Replaces a node's guesses with the pressure, enthalpy and mass flow of each port in the latest result.</summary>
+    public void SetGuessesFromResult(string nodeId)
+    {
+        if (Result is not { HasResults: true } result || Document.FindNode(nodeId) is not { } node ||
+            Catalog.Find(node.TypeId) is not { } descriptor)
+            return;
+        List<GuessModel> guesses = StartGuesses.AllFromResult(node, descriptor, result);
+        if (guesses.Count > 0)
+            EditNode(nodeId, n => n.Guesses = guesses);
+    }
+
+    public void ClearGuesses(string nodeId) => EditNode(nodeId, node => node.Guesses.Clear());
 
     #endregion
 

@@ -2,6 +2,7 @@ using CycleCalculator.CycleModel.Fluids;
 using CycleCalculator.CycleModel.Model;
 using CycleCalculator.CycleModel.Model.BaseComponents;
 using CycleCalculator.CycleModel.Solver;
+using CycleCalculatorUi.Core.Building;
 using CycleCalculatorUi.Core.Catalog;
 using CycleCalculatorUi.Core.Document;
 using CycleCalculatorUi.Core.Examples;
@@ -107,6 +108,53 @@ public class SolveTests
         Assert.That(result.ResidualHistory.Select(i => i.Iteration), Is.Ordered);
         Assert.That(result.ResidualHistory[^1].MaxResidual, Is.LessThanOrEqualTo(1e-6));
         Assert.That(reports, Is.Not.Empty);
+    }
+
+    [Test]
+    public async Task StartGuesses_OnStreamAndPorts_SolveToSameResult()
+    {
+        SystemDocument document = ExampleSystems.EjectorHeatPump();
+        SolveResult reference = await _service.SolveAsync(document);
+        Assert.That(reference.Success, Is.True, reference.Message);
+
+        NodeModel gasCooler = document.Nodes.Single(n => n.Name == "Gas cooler");
+        gasCooler.Guesses.Add(new GuessModel(GuessQuantity.Pressure, 85, Stream: 0));
+        gasCooler.Guesses.Add(new GuessModel(GuessQuantity.Temperature, 35, "Outlet"));
+        Assert.That(new ModelBuilder(ComponentCatalog.Default).Validate(document)
+            .Where(i => i.Severity == IssueSeverity.Error), Is.Empty);
+
+        SolveResult result = await _service.SolveAsync(document);
+        Assert.That(result.Success, Is.True, result.Message);
+        Assert.That(Port(document, result, "Gas cooler", "Outlet").Enthalpy,
+            Is.EqualTo(Port(document, reference, "Gas cooler", "Outlet").Enthalpy).Within(1e-3));
+    }
+
+    [Test]
+    public void StartGuesses_InvalidGuessesAreReportedPerGuess()
+    {
+        SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
+        NodeModel split = document.Nodes.Single(n => n.Name == "Split2");
+        split.Guesses.Add(new GuessModel(GuessQuantity.MassFlow, 1));
+        split.Guesses.Add(new GuessModel(GuessQuantity.Quality, 1.5, "Inlet"));
+        split.Guesses.Add(new GuessModel(GuessQuantity.MassFlow, 1, "Inlet"));
+
+        List<ValidationIssue> issues = new ModelBuilder(ComponentCatalog.Default).Validate(document)
+            .Where(i => i.NodeId == split.Id && i.ParameterKey?.StartsWith("guess:") == true).ToList();
+        Assert.That(issues.Select(i => i.ParameterKey), Is.EquivalentTo(new[] { "guess:0", "guess:1" }));
+    }
+
+    [Test]
+    public async Task StartGuesses_FromResultMatchResultPorts()
+    {
+        SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
+        SolveResult result = await _service.SolveAsync(document);
+        NodeModel comp = document.Nodes.Single(n => n.Name == "Comp1");
+        ComponentDescriptor descriptor = ComponentCatalog.Default.Get(comp.TypeId);
+
+        List<GuessModel> guesses = StartGuesses.AllFromResult(comp, descriptor, result);
+        Assert.That(guesses, Has.Count.EqualTo(6));
+        GuessScope all = StartGuesses.Scopes(descriptor)[0];
+        Assert.That(StartGuesses.FromResult(all, GuessQuantity.MassFlow, comp, descriptor, result), Is.EqualTo(1).Within(1e-9));
     }
 
     [Test]

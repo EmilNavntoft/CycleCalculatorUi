@@ -114,5 +114,13 @@ public sealed record CanvasPoint(double X, double Y);
 
 public sealed record FluidSelection(string Fluid, string Backend);
 
-/// <summary>A start guess for the solver. <see cref="PortKey"/> null applies the guess to the whole component.</summary>
-public sealed record GuessModel(CycleCalculator.CycleModel.Model.BaseComponents.GuessQuantity Quantity, double Value, string? PortKey = null);
+/// <summary>
+/// A start guess for the solver. It applies to one port when <see cref="PortKey"/> is set, otherwise to the fluid
+/// ports of one stream when <see cref="Stream"/> is set (e.g. one side of a heat exchanger), otherwise to the whole
+/// component. A mass flow guess on a port is positive into the component; on a stream or component it is the throughput.
+/// </summary>
+public sealed record GuessModel(
+    CycleCalculator.CycleModel.Model.BaseComponents.GuessQuantity Quantity,
+    double Value,
+    string? PortKey = null,
+    int? Stream = null);
