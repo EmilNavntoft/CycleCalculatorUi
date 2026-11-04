@@ -74,6 +74,26 @@ public class SolveTests
     }
 
     [Test]
+    public async Task SimpleCompressor_SuctionVolumeFlowGivesSameMassFlow()
+    {
+        SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
+        SolveResult reference = await _service.SolveAsync(document);
+        Assert.That(reference.Success, Is.True, reference.Message);
+        double volumeFlow = reference.Outputs[NodeId(document, "Comp1")]
+            .Single(o => o.Label == "Suction volume flow").Value!.Value;
+
+        NodeModel comp1 = document.Nodes.Single(n => n.Name == "Comp1");
+        comp1.Choices["flowSpecification"] = "volumeFlow";
+        comp1.Numbers["suctionVolumeFlow"] = volumeFlow;
+        SolveResult result = await _service.SolveAsync(document);
+
+        Assert.That(result.Success, Is.True, result.Message);
+        Assert.That(Port(document, result, "Comp1", "Inlet").MassFlow, Is.EqualTo(1).Within(1e-6));
+        Assert.That(Port(document, result, "Comp1", "Outlet").Enthalpy,
+            Is.EqualTo(Port(document, reference, "Comp1", "Outlet").Enthalpy).Within(1e-4));
+    }
+
+    [Test]
     public void Solver_StopsWhenCancelledMidSolve()
     {
         using CancellationTokenSource cts = new();

@@ -46,7 +46,7 @@ public sealed class SolveOptions
 {
     /// <summary>Cancel the solver after this time. The backend stops at its next cancellation check (between
     /// solver iterations), so a single slow property call can still finish in the background.</summary>
-    public TimeSpan Timeout { get; init; } = TimeSpan.FromSeconds(60);
+    public TimeSpan Timeout { get; init; } = TimeSpan.FromSeconds(240);
 
     /// <summary>Maximum number of solves running at once (protects a shared web server).</summary>
     public int MaxConcurrentSolves { get; init; } = Math.Max(1, Environment.ProcessorCount / 2);

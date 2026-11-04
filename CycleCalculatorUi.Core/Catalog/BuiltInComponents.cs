@@ -1,3 +1,4 @@
+using CycleCalculator.CycleModel.Conversion;
 using CycleCalculator.CycleModel.Fluids;
 using CycleCalculator.CycleModel.Model;
 using CycleCalculator.CycleModel.Model.Connectors;
@@ -99,35 +100,63 @@ public static class BuiltInComponents
         GetPort = Typed.Ports<TemperatureBoundary>(("Inlet", t => t.Inlet), ("Outlet", t => t.Outlet))
     };
 
-    public static ComponentDescriptor SimpleCompressor() => new()
+    public static ComponentDescriptor SimpleCompressor()
     {
-        TypeId = nameof(CycleCalculator.CycleModel.Model.SimpleCompressor),
-        DisplayName = "Compressor",
-        Category = Categories.Compressors,
-        NamePrefix = "Comp",
-        Description = "Compressor with a fixed isentropic efficiency and discharge pressure.",
-        Ports = Inline(),
-        Parameters =
-        [
-            new ParameterDescriptor("isentropicEfficiency", "Isentropic efficiency", ParameterKind.Number)
+        static bool ByVolume(NodeModel node) => ChoiceIs(node, "flowSpecification", "volumeFlow");
+
+        return new ComponentDescriptor
+        {
+            TypeId = nameof(CycleCalculator.CycleModel.Model.SimpleCompressor),
+            DisplayName = "Compressor",
+            Category = Categories.Compressors,
+            NamePrefix = "Comp",
+            Description = "Compressor with a fixed isentropic efficiency and discharge pressure. The flow can be " +
+                          "given as a mass flow or as a suction volume flow.",
+            Ports = Inline(),
+            Parameters =
+            [
+                new ParameterDescriptor("isentropicEfficiency", "Isentropic efficiency", ParameterKind.Number)
+                {
+                    Unit = "-", DefaultNumber = 0.7, Min = 0, MinExclusive = true, Max = 1
+                },
+                new ParameterDescriptor("dischargePressure", "Discharge pressure", ParameterKind.Number)
+                {
+                    Unit = "bar", DefaultNumber = 90, Min = 0, MinExclusive = true
+                },
+                new ParameterDescriptor("flowSpecification", "Flow specification", ParameterKind.Choice)
+                {
+                    DefaultChoice = "massFlow",
+                    Options =
+                    [
+                        new ChoiceOption("massFlow", "Mass flow"),
+                        new ChoiceOption("volumeFlow", "Suction volume flow")
+                    ]
+                },
+                new ParameterDescriptor("massFlow", "Mass flow", ParameterKind.Number)
+                {
+                    Unit = "kg/s", Optional = true, Min = 0, IsActive = node => !ByVolume(node),
+                    Help = "Leave empty to let the rest of the system determine the flow."
+                },
+                new ParameterDescriptor("suctionVolumeFlow", "Suction volume flow", ParameterKind.Number)
+                {
+                    Unit = "m³/h", Optional = true, Min = 0, IsActive = ByVolume,
+                    Help = "Volume flow at the suction state; the mass flow follows from the suction density. " +
+                           "Leave empty to let the rest of the system determine the flow."
+                }
+            ],
+            Create = c => new SimpleCompressor(c.Name, c.Fluid(), c.Backend(),
+                c.Number("isentropicEfficiency"), c.Number("dischargePressure"), c.OptionalNumber("massFlow"),
+                c.OptionalNumber("suctionVolumeFlow") / 3600),
+            EnergyKind = EnergyKind.Power,
+            GetPort = Typed.Ports<SimpleCompressor>(("Inlet", s => s.Inlet), ("Outlet", s => s.Outlet)),
+            ReadOutputs = Typed.Outputs<SimpleCompressor>(compressor =>
             {
-                Unit = "-", DefaultNumber = 0.7, Min = 0, MinExclusive = true, Max = 1
-            },
-            new ParameterDescriptor("dischargePressure", "Discharge pressure", ParameterKind.Number)
-            {
-                Unit = "bar", DefaultNumber = 90, Min = 0, MinExclusive = true
-            },
-            new ParameterDescriptor("massFlow", "Mass flow", ParameterKind.Number)
-            {
-                Unit = "kg/s", Optional = true, Min = 0,
-                Help = "Leave empty to let the rest of the system determine the flow."
-            }
-        ],
-        Create = c => new SimpleCompressor(c.Name, c.Fluid(), c.Backend(),
-            c.Number("isentropicEfficiency"), c.Number("dischargePressure"), c.OptionalNumber("massFlow")),
-        EnergyKind = EnergyKind.Power,
-        GetPort = Typed.Ports<SimpleCompressor>(("Inlet", s => s.Inlet), ("Outlet", s => s.Outlet))
-    };
+                double density = compressor.Inlet.Fluid.Get(UnitType.Density,
+                    UnitType.Pressure, compressor.Inlet.Pressure, UnitType.Enthalpy, compressor.Inlet.Enthalpy);
+                return [new OutputValue("Suction volume flow", Math.Abs(compressor.Inlet.MassFlow) / density * 3600, "m³/h")];
+            })
+        };
+    }
 
     public static ComponentDescriptor ExpansionValve()
     {
