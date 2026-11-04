@@ -1,3 +1,4 @@
+using CycleCalculator.CycleModel.Solver;
 using CycleCalculatorUi.Core.Building;
 using CycleCalculatorUi.Core.Catalog;
 using CycleCalculatorUi.Core.Document;
@@ -108,6 +109,12 @@ public sealed class EditorState(ComponentCatalog catalog, SolveService solver)
     public SolveResult? Result { get; private set; }
 
     public bool IsSolving { get; private set; }
+
+    /// <summary>Max residual per solver iteration: live while solving, otherwise from the latest result.</summary>
+    public IReadOnlyList<SolverIteration> ResidualHistory =>
+        IsSolving ? _liveResidualHistory : Result?.ResidualHistory ?? [];
+
+    private IReadOnlyList<SolverIteration> _liveResidualHistory = [];
 
     /// <summary>True when the document changed in a way that affects the calculation since the last solve.</summary>
     public bool IsResultStale
@@ -454,11 +461,18 @@ public sealed class EditorState(ComponentCatalog catalog, SolveService solver)
         if (IsSolving)
             return;
         IsSolving = true;
+        _liveResidualHistory = [];
         _solveCancellation = new CancellationTokenSource();
         Notify();
         try
         {
-            Result = await solver.SolveAsync(Document, _solveCancellation.Token);
+            Result = await solver.SolveAsync(Document, _solveCancellation.Token, history =>
+            {
+                if (!IsSolving)
+                    return;
+                _liveResidualHistory = history;
+                Notify();
+            });
         }
         finally
         {

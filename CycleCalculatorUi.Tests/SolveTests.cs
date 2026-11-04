@@ -94,6 +94,22 @@ public class SolveTests
     }
 
     [Test]
+    public async Task Solve_RecordsResidualHistoryAndReportsProgress()
+    {
+        SolveService service = new(ComponentCatalog.Default,
+            new SolveOptions { ProgressInterval = 1, MinProgressPeriod = TimeSpan.Zero });
+        List<IReadOnlyList<SolverIteration>> reports = [];
+        SolveResult result = await service.SolveAsync(ExampleSystems.TwoStageWithParallelCompressor(),
+            onProgress: history => { lock (reports) reports.Add(history); });
+
+        Assert.That(result.Success, Is.True, result.Message);
+        Assert.That(result.ResidualHistory, Is.Not.Empty);
+        Assert.That(result.ResidualHistory.Select(i => i.Iteration), Is.Ordered);
+        Assert.That(result.ResidualHistory[^1].MaxResidual, Is.LessThanOrEqualTo(1e-6));
+        Assert.That(reports, Is.Not.Empty);
+    }
+
+    [Test]
     public void Solver_StopsWhenCancelledMidSolve()
     {
         using CancellationTokenSource cts = new();

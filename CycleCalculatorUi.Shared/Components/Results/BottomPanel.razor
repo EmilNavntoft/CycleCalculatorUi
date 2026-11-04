@@ -19,6 +19,13 @@
         <button type="button" role="tab" class="@(_tab == Tab.PhDiagram && _open ? "active" : "")" @onclick="() => Toggle(Tab.PhDiagram)">
             p-h diagram
         </button>
+        <button type="button" role="tab" class="@(_tab == Tab.Convergence && _open ? "active" : "")" @onclick="() => Toggle(Tab.Convergence)">
+            Convergence
+            @if (State.IsSolving && State.ResidualHistory.Count > 0)
+            {
+                <span class="count">@State.ResidualHistory[^1].Iteration</span>
+            }
+        </button>
         <button type="button" role="tab" class="@(_tab == Tab.Study && _open ? "active" : "")" @onclick="() => Toggle(Tab.Study)">
             Parametric study
             @if (State.IsStudyRunning)
@@ -33,7 +40,7 @@
     </div>
     @if (_open)
     {
-        <div class="tab-body @(_tab is Tab.PhDiagram or Tab.Study ? "tall" : "")">
+        <div class="tab-body @(_tab is Tab.PhDiagram or Tab.Study or Tab.Convergence ? "tall" : "")">
             @if (_tab == Tab.Problems)
             {
                 @if (SolverFailure is { } failure)
@@ -63,6 +70,10 @@
             else if (_tab == Tab.PhDiagram)
             {
                 <PhDiagramView State="State"/>
+            }
+            else if (_tab == Tab.Convergence)
+            {
+                <ConvergenceChart History="State.ResidualHistory" IsSolving="State.IsSolving"/>
             }
             else if (_tab == Tab.Study)
             {
@@ -126,6 +137,7 @@
         Problems,
         Results,
         PhDiagram,
+        Convergence,
         Study
     }
 
@@ -176,8 +188,8 @@
     /// <summary>Opens the given tab, e.g. after a calculation.</summary>
     public void Show(bool results)
     {
-        // Stay on the p-h diagram or the study after a successful calculation.
-        if (!(results && _open && _tab is Tab.PhDiagram or Tab.Study))
+        // Stay on the p-h diagram, the convergence plot or the study after a successful calculation.
+        if (!(results && _open && _tab is Tab.PhDiagram or Tab.Study or Tab.Convergence))
             _tab = results ? Tab.Results : Tab.Problems;
         _open = true;
         StateHasChanged();

@@ -38,6 +38,9 @@ public sealed class SolveResult
     /// <summary>Fingerprint of the document that was solved; compare to detect stale results.</summary>
     public string Fingerprint { get; init; } = "";
 
+    /// <summary>Largest scaled residual of every nonlinear solver iteration, in order.</summary>
+    public IReadOnlyList<SolverIteration> ResidualHistory { get; init; } = [];
+
     public PortResult? Port(string nodeId, string portKey) =>
         Ports.TryGetValue(nodeId, out var ports) ? ports.GetValueOrDefault(portKey) : null;
 }
@@ -50,6 +53,12 @@ public sealed class SolveOptions
 
     /// <summary>Maximum number of solves running at once (protects a shared web server).</summary>
     public int MaxConcurrentSolves { get; init; } = Math.Max(1, Environment.ProcessorCount / 2);
+
+    /// <summary>Report solver progress every this many iterations…</summary>
+    public int ProgressInterval { get; init; } = 10;
+
+    /// <summary>…but not more often than this, so a fast solve does not flood the UI with updates.</summary>
+    public TimeSpan MinProgressPeriod { get; init; } = TimeSpan.FromMilliseconds(100);
 }
 
 /// <summary>Builds and solves documents on a background thread.</summary>
@@ -68,12 +77,16 @@ public sealed class SolveService
         _slots = new SemaphoreSlim(_options.MaxConcurrentSolves);
     }
 
-    public async Task<SolveResult> SolveAsync(SystemDocument document, CancellationToken cancellationToken = default)
+    /// <param name="onProgress">Receives the residual history so far while the solver runs, called from the
+    /// solving thread every <see cref="SolveOptions.ProgressInterval"/> iterations.</param>
+    public async Task<SolveResult> SolveAsync(SystemDocument document, CancellationToken cancellationToken = default,
+        Action<IReadOnlyList<SolverIteration>>? onProgress = null)
     {
         // Work on a copy so edits made while solving cannot affect this solve.
         SystemDocument snapshot = DocumentSerializer.Clone(document);
         string fingerprint = DocumentSerializer.Fingerprint(snapshot);
         Stopwatch stopwatch = Stopwatch.StartNew();
+        ResidualRecorder recorder = new(_options, onProgress);
 
         BuildResult build = _builder.Build(snapshot);
         if (!build.Success)
@@ -101,7 +114,7 @@ public sealed class SolveService
         // Cancels the backend solve when the caller cancels or the timeout elapses.
         CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         stop.CancelAfter(_options.Timeout);
-        Task<SolveOutcome> solve = Task.Run(() => Orchestrator.TrySolve(build.Components, stop.Token),
+        Task<SolveOutcome> solve = Task.Run(() => Orchestrator.TrySolve(build.Components, stop.Token, recorder.Add),
             CancellationToken.None);
         // Free the slot when the solver really finishes, even if we stopped waiting for it earlier.
         _ = solve.ContinueWith(_ =>
@@ -138,7 +151,8 @@ public sealed class SolveService
             Issues = build.Issues,
             Ports = ReadPorts(snapshot, build),
             Outputs = ReadOutputs(snapshot, build),
-            Fingerprint = fingerprint
+            Fingerprint = fingerprint,
+            ResidualHistory = recorder.Finish()
         };
 
         SolveResult Failure(string message) => new()
@@ -147,8 +161,45 @@ public sealed class SolveService
             Message = message,
             Issues = build.Issues,
             Fingerprint = fingerprint,
-            Duration = stopwatch.Elapsed
+            Duration = stopwatch.Elapsed,
+            ResidualHistory = recorder.Finish()
         };
+    }
+
+    /// <summary>Collects the solver's iterations and forwards them to the caller at a limited rate.</summary>
+    private sealed class ResidualRecorder(SolveOptions options, Action<IReadOnlyList<SolverIteration>>? onProgress)
+    {
+        private readonly List<SolverIteration> _history = [];
+        private readonly Stopwatch _sinceReport = Stopwatch.StartNew();
+        private bool _finished;
+
+        public void Add(SolverIteration iteration)
+        {
+            SolverIteration[] snapshot;
+            lock (_history)
+            {
+                // A solve we stopped waiting for (timeout, cancel) can keep running; ignore it.
+                if (_finished)
+                    return;
+                _history.Add(iteration);
+                if (onProgress is null || iteration.Iteration % options.ProgressInterval != 0 ||
+                    _sinceReport.Elapsed < options.MinProgressPeriod)
+                    return;
+                _sinceReport.Restart();
+                snapshot = _history.ToArray();
+            }
+
+            onProgress(snapshot);
+        }
+
+        public IReadOnlyList<SolverIteration> Finish()
+        {
+            lock (_history)
+            {
+                _finished = true;
+                return _history.ToArray();
+            }
+        }
     }
 
     private Dictionary<string, IReadOnlyDictionary<string, PortResult>> ReadPorts(SystemDocument document, BuildResult build)
