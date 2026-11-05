@@ -1,0 +1,109 @@
+@* Temperatures of both streams along a heat exchanger against the heat transferred (a T-Q diagram). *@
+@using CycleCalculator.CycleModel.Model
+@using static CycleCalculatorUi.Shared.Components.ChartAxis
+
+@if (_valid)
+{
+    <div class="study-legend">
+        @foreach (int stream in new[] { 0, 1 })
+        {
+            <span><i class="key-swatch" style="background: @Color(stream)"></i>@StreamLabel(stream)</span>
+        }
+    </div>
+    <svg class="study-chart profile-chart" viewBox="0 0 @W @H" role="img"
+         aria-label="Temperature profile of both streams against heat transferred"
+         @onmouseleave="() => _hover = null">
+        @foreach (double y in _yTicks)
+        {
+            <g>
+                <line class="grid" x1="@L" x2="@(L + PlotW)" y1="@N(Y(y))" y2="@N(Y(y))"/>
+                <text class="tick" x="@(L - 4)" y="@N(Y(y) + 3.5)" text-anchor="end">@Tick(y, _yStep)</text>
+            </g>
+        }
+        @foreach (double x in _xTicks)
+        {
+            <g><text class="tick" x="@N(X(x))" y="@(T + PlotH + 12)" text-anchor="middle">@Tick(x, _xStep)</text></g>
+        }
+        <line class="axis" x1="@L" x2="@(L + PlotW)" y1="@(T + PlotH)" y2="@(T + PlotH)"/>
+        <text class="axis-title" x="@(L + PlotW / 2)" y="@(H - 3)" text-anchor="middle">Heat transferred [kW]</text>
+        <text class="axis-title" transform="translate(10 @(T + PlotH / 2)) rotate(-90)" text-anchor="middle">T [°C]</text>
+
+        <path class="series-line" d="@LinePath(Profile.Temperature1)" style="stroke: @Color(0)"/>
+        <path class="series-line" d="@LinePath(Profile.Temperature2)" style="stroke: @Color(1)"/>
+
+        @{ int marked = _hover ?? _pinch; }
+        <line class="crosshair" x1="@N(X(Profile.HeatTransfer[marked]))" x2="@N(X(Profile.HeatTransfer[marked]))"
+              y1="@T" y2="@(T + PlotH)"/>
+        <circle class="series-dot" cx="@N(X(Profile.HeatTransfer[marked]))" cy="@N(Y(Profile.Temperature1[marked]))" r="3.5" style="fill: @Color(0)"/>
+        <circle class="series-dot" cx="@N(X(Profile.HeatTransfer[marked]))" cy="@N(Y(Profile.Temperature2[marked]))" r="3.5" style="fill: @Color(1)"/>
+
+        @* One hover strip per point, centred on it. *@
+        @for (int i = 0; i < Profile.Count; i++)
+        {
+            int index = i;
+            double left = i == 0 ? L : (X(Profile.HeatTransfer[i - 1]) + X(Profile.HeatTransfer[i])) / 2;
+            double right = i == Profile.Count - 1 ? L + PlotW : (X(Profile.HeatTransfer[i]) + X(Profile.HeatTransfer[i + 1])) / 2;
+            <rect class="hit" x="@N(left)" y="@T" width="@N(Math.Max(right - left, 0.5))" height="@PlotH"
+                  @onmouseover="() => _hover = index"/>
+        }
+    </svg>
+    <div class="profile-readout">
+        @{ int shown = _hover ?? _pinch; }
+        <span>@(_hover is null ? "Pinch" : "At") Q = @Format.Number(Profile.HeatTransfer[shown], 4) kW</span>
+        <span>@ShortLabel(0) @Format.Temperature(Profile.Temperature1[shown]) °C</span>
+        <span>@ShortLabel(1) @Format.Temperature(Profile.Temperature2[shown]) °C</span>
+        <span>ΔT @Format.Number(Math.Abs(Profile.Temperature1[shown] - Profile.Temperature2[shown]), 3) K</span>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public TemperatureProfile Profile { get; set; } = null!;
+
+    /// <summary>Labels of stream 1 and stream 2.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<string> Streams { get; set; } = null!;
+
+    private const double W = 272, H = 190, L = 34, T = 6, R = 6, B = 28;
+    private const double PlotW = W - L - R, PlotH = H - T - B;
+
+    private bool _valid;
+    private bool _stream1IsHot;
+    private int _pinch;
+    private int? _hover;
+    private double _xMin, _xMax, _yMin, _yMax, _xStep, _yStep;
+    private IReadOnlyList<double> _xTicks = [], _yTicks = [];
+
+    protected override void OnParametersSet()
+    {
+        _hover = null;
+        List<double> temperatures = Profile.Temperature1.Concat(Profile.Temperature2).ToList();
+        _valid = Profile.Count >= 2 && temperatures.All(double.IsFinite) && Profile.HeatTransfer.All(double.IsFinite);
+        if (!_valid)
+            return;
+
+        _stream1IsHot = Profile.Temperature1.Average() >= Profile.Temperature2.Average();
+        _pinch = Enumerable.Range(0, Profile.Count)
+            .MinBy(i => Math.Abs(Profile.Temperature1[i] - Profile.Temperature2[i]));
+        (_xMin, _xMax, _xStep, _xTicks) = ChartAxis.Scale(Profile.HeatTransfer[0], Profile.HeatTransfer[^1], false, 4);
+        (_yMin, _yMax, _yStep, _yTicks) = ChartAxis.Scale(temperatures.Min(), temperatures.Max(), true, 4);
+    }
+
+    /// <summary>The hotter stream is drawn in the warm color.</summary>
+    private string Color(int stream) => (stream == 0) == _stream1IsHot ? "var(--series-2)" : "var(--series-1)";
+
+    private string StreamLabel(int stream) => stream < Streams.Count ? Streams[stream] : $"Stream {stream + 1}";
+
+    /// <summary>The label without a trailing "(top)"-style hint, for the compact readout.</summary>
+    private string ShortLabel(int stream) => StreamLabel(stream).Split(" (")[0];
+
+    private double X(double value) => L + (value - _xMin) / (_xMax - _xMin) * PlotW;
+
+    private double Y(double value) => T + PlotH - (value - _yMin) / (_yMax - _yMin) * PlotH;
+
+    private string LinePath(IReadOnlyList<double> temperatures)
+    {
+        System.Text.StringBuilder path = new();
+        for (int i = 0; i < temperatures.Count; i++)
+            path.Append(i == 0 ? 'M' : 'L').Append(N(X(Profile.HeatTransfer[i]))).Append(' ').Append(N(Y(temperatures[i])));
+        return path.ToString();
+    }
+}

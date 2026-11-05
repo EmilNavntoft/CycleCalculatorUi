@@ -3,6 +3,7 @@ using CycleCalculator.CycleModel.Fluids;
 using CycleCalculator.CycleModel.Model;
 using CycleCalculator.CycleModel.Model.Connectors;
 using CycleCalculator.CycleModel.Model.En12900;
+using CycleCalculator.CycleModel.Model.Pumps;
 using CycleCalculatorUi.Core.Document;
 
 namespace CycleCalculatorUi.Core.Catalog;
@@ -19,12 +20,14 @@ public static class BuiltInComponents
         TemperatureBoundary(),
         SimpleCompressor(),
         En12900Compressor(),
+        Pump(),
         ExpansionValve(),
         ThreeWayValve(),
         FixedEfficiencyEjector(),
         FixedEfficiencyHeatExchanger(),
         FixedUaHeatExchanger(),
         FixedUaEvaporator(),
+        Pipe(),
         Split(),
         Merge(),
         Receiver()
@@ -103,6 +106,7 @@ public static class BuiltInComponents
     public static ComponentDescriptor SimpleCompressor()
     {
         static bool ByVolume(NodeModel node) => ChoiceIs(node, "flowSpecification", "volumeFlow");
+        static bool Controlled(NodeModel node) => ChoiceIs(node, "flowSpecification", "pressureControl");
 
         return new ComponentDescriptor
         {
@@ -111,8 +115,9 @@ public static class BuiltInComponents
             Category = Categories.Compressors,
             NamePrefix = "Comp",
             Description = "Compressor with a fixed isentropic efficiency and discharge pressure. The flow can be " +
-                          "given as a mass flow or as a suction volume flow.",
-            Ports = Inline(),
+                          "given as a mass flow or as a suction volume flow, or adjusted to hold a pressure measured " +
+                          "through the signal input.",
+            Ports = CompressorPorts(Controlled),
             Parameters =
             [
                 new ParameterDescriptor("isentropicEfficiency", "Isentropic efficiency", ParameterKind.Number)
@@ -129,12 +134,13 @@ public static class BuiltInComponents
                     Options =
                     [
                         new ChoiceOption("massFlow", "Mass flow"),
-                        new ChoiceOption("volumeFlow", "Suction volume flow")
+                        new ChoiceOption("volumeFlow", "Suction volume flow"),
+                        new ChoiceOption("pressureControl", "Pressure control (signal input)")
                     ]
                 },
                 new ParameterDescriptor("massFlow", "Mass flow", ParameterKind.Number)
                 {
-                    Unit = "kg/s", Optional = true, Min = 0, IsActive = node => !ByVolume(node),
+                    Unit = "kg/s", Optional = true, Min = 0, IsActive = node => !ByVolume(node) && !Controlled(node),
                     Help = "Leave empty to let the rest of the system determine the flow."
                 },
                 new ParameterDescriptor("suctionVolumeFlow", "Suction volume flow", ParameterKind.Number)
@@ -142,18 +148,166 @@ public static class BuiltInComponents
                     Unit = "m³/h", Optional = true, Min = 0, IsActive = ByVolume,
                     Help = "Volume flow at the suction state; the mass flow follows from the suction density. " +
                            "Leave empty to let the rest of the system determine the flow."
-                }
+                },
+                PressureSetpointParameter(Controlled),
+                new ParameterDescriptor("minMassFlow", "Min. mass flow", ParameterKind.Number)
+                {
+                    Unit = "kg/s", Optional = true, Min = 0, IsActive = Controlled,
+                    Help = "Lower limit of the controlled mass flow. Leave empty for zero."
+                },
+                new ParameterDescriptor("maxMassFlow", "Max. mass flow", ParameterKind.Number)
+                {
+                    Unit = "kg/s", Optional = true, Min = 0, MinExclusive = true, IsActive = Controlled,
+                    Help = "Upper limit of the controlled mass flow, e.g. the compressor's full capacity. Leave empty for no limit."
+                },
+                CompressorControlSignParameter(Controlled)
             ],
             Create = c => new SimpleCompressor(c.Name, c.Fluid(), c.Backend(),
                 c.Number("isentropicEfficiency"), c.Number("dischargePressure"), c.OptionalNumber("massFlow"),
-                c.OptionalNumber("suctionVolumeFlow") / 3600),
+                c.OptionalNumber("suctionVolumeFlow") / 3600,
+                Controlled(c.Node)
+                    ? PressureControl(c, c.OptionalNumber("minMassFlow"), c.OptionalNumber("maxMassFlow"))
+                    : null),
             EnergyKind = EnergyKind.Power,
             GetPort = Typed.Ports<SimpleCompressor>(("Inlet", s => s.Inlet), ("Outlet", s => s.Outlet)),
+            GetSignalPort = Typed.SignalPorts<SimpleCompressor>(("Signal", s => s.SignalPort)),
             ReadOutputs = Typed.Outputs<SimpleCompressor>(compressor =>
             {
                 double density = compressor.Inlet.Fluid.Get(UnitType.Density,
                     UnitType.Pressure, compressor.Inlet.Pressure, UnitType.Enthalpy, compressor.Inlet.Enthalpy);
-                return [new OutputValue("Suction volume flow", Math.Abs(compressor.Inlet.MassFlow) / density * 3600, "m³/h")];
+                return
+                [
+                    new OutputValue("Suction volume flow", Math.Abs(compressor.Inlet.MassFlow) / density * 3600, "m³/h"),
+                    new OutputValue("Pressure error", compressor.PressureError, "bar")
+                ];
+            })
+        };
+    }
+
+    public static ComponentDescriptor Pump()
+    {
+        static bool ModeIs(NodeModel node, string mode) => ChoiceIs(node, "control", mode);
+
+        string[] terms = ["c0 · 1", "c1 · Q", "c2 · Q²"];
+        const string curveHelp = "Head as a polynomial in the volume flow Q (m³/h): H = c0 + c1·Q + c2·Q², in the " +
+                                 "head unit above. Use c2 = 0 for a straight line.";
+
+        return new ComponentDescriptor
+        {
+            TypeId = nameof(CycleCalculator.CycleModel.Model.Pump),
+            DisplayName = "Pump",
+            Category = Categories.Pumps,
+            NamePrefix = "Pump",
+            Description = "Variable-speed pump limited by an envelope: the maximum and minimum head for a given " +
+                          "volume flow. The pump runs at a fixed position in the envelope, adjusts to a pressure " +
+                          "setpoint (staying on the nearest curve if it cannot reach it), or lets the system set the " +
+                          "head. Power follows from a fixed efficiency.",
+            Ports = Inline(),
+            Parameters =
+            [
+                new ParameterDescriptor("efficiency", "Efficiency", ParameterKind.Number)
+                {
+                    Unit = "-", DefaultNumber = 0.6, Min = 0, MinExclusive = true, Max = 1,
+                    Help = "Shaft power = hydraulic power / efficiency. All losses heat the fluid."
+                },
+                new ParameterDescriptor("headUnit", "Envelope head unit", ParameterKind.Choice)
+                {
+                    DefaultChoice = nameof(PumpHeadUnit.Metres),
+                    Options =
+                    [
+                        new ChoiceOption(nameof(PumpHeadUnit.Metres), "m (head of pumped fluid)"),
+                        new ChoiceOption(nameof(PumpHeadUnit.Kilopascals), "kPa"),
+                        new ChoiceOption(nameof(PumpHeadUnit.Bar), "bar")
+                    ]
+                },
+                new ParameterDescriptor("maxCurve", "Maximum curve", ParameterKind.Coefficients)
+                {
+                    Length = 3, CoefficientLabels = terms, DefaultCoefficients = [30, 0, -0.02],
+                    Help = "Highest head the pump can deliver, e.g. at full speed. " + curveHelp
+                },
+                new ParameterDescriptor("minCurve", "Minimum curve", ParameterKind.Coefficients)
+                {
+                    Length = 3, CoefficientLabels = terms, DefaultCoefficients = [10, 0, -0.02],
+                    Help = "Lowest head the pump can deliver, e.g. at minimum speed. " + curveHelp
+                },
+                new ParameterDescriptor("control", "Control mode", ParameterKind.Choice)
+                {
+                    DefaultChoice = "position",
+                    Options =
+                    [
+                        new ChoiceOption("position", "Fixed envelope position"),
+                        new ChoiceOption("pressureRise", "Pressure rise setpoint"),
+                        new ChoiceOption("dischargePressure", "Discharge pressure setpoint"),
+                        new ChoiceOption("free", "Free (head set by other components)")
+                    ]
+                },
+                new ParameterDescriptor("position", "Envelope position", ParameterKind.Number)
+                {
+                    Unit = "-", DefaultNumber = 1, Min = 0, Max = 1,
+                    Help = "0 runs on the minimum curve, 1 on the maximum curve; in between the head is interpolated.",
+                    IsActive = node => ModeIs(node, "position")
+                },
+                new ParameterDescriptor("pressureRiseSetpoint", "Pressure rise setpoint", ParameterKind.Number)
+                {
+                    Unit = "bar", DefaultNumber = 1.5, Min = 0,
+                    IsActive = node => ModeIs(node, "pressureRise")
+                },
+                new ParameterDescriptor("dischargePressureSetpoint", "Discharge pressure setpoint", ParameterKind.Number)
+                {
+                    Unit = "bar", DefaultNumber = 3, Min = 0, MinExclusive = true,
+                    IsActive = node => ModeIs(node, "dischargePressure")
+                },
+                new ParameterDescriptor("volumeFlow", "Volume flow", ParameterKind.Number)
+                {
+                    Unit = "m³/h", Optional = true, Min = 0,
+                    Help = "Volume flow at the inlet. Leave empty to let the rest of the system determine the flow."
+                }
+            ],
+            Create = c =>
+            {
+                PumpEnvelope envelope;
+                try
+                {
+                    envelope = new PumpEnvelope(c.Coefficients("maxCurve"), c.Coefficients("minCurve"),
+                        Enum.Parse<PumpHeadUnit>(c.Choice("headUnit")));
+                }
+                catch (ArgumentException ex) when (ex.ParamName is "maxCurve" or "minCurve")
+                {
+                    throw new ParameterException(ex.ParamName, CleanMessage(ex));
+                }
+
+                PumpControl control = c.Choice("control") switch
+                {
+                    "pressureRise" => PumpControl.PressureRise(c.Number("pressureRiseSetpoint")),
+                    "dischargePressure" => PumpControl.DischargePressure(c.Number("dischargePressureSetpoint")),
+                    "free" => PumpControl.Free,
+                    _ => PumpControl.AtPosition(c.Number("position"))
+                };
+                return new Pump(c.Name, c.Fluid(), c.Backend(), envelope, c.Number("efficiency"), control,
+                    c.OptionalNumber("volumeFlow"));
+            },
+            EnergyKind = EnergyKind.Power,
+            GetPort = Typed.Ports<Pump>(("Inlet", p => p.Inlet), ("Outlet", p => p.Outlet)),
+            ReadOutputs = Typed.Outputs<Pump>(pump =>
+            {
+                string headUnit = pump.Envelope.HeadUnit switch
+                {
+                    PumpHeadUnit.Metres => "m",
+                    PumpHeadUnit.Kilopascals => "kPa",
+                    _ => "bar"
+                };
+                return
+                [
+                    new OutputValue("Power", pump.Power, "kW"),
+                    new OutputValue("Hydraulic power", pump.HydraulicPower, "kW"),
+                    new OutputValue("Volume flow", pump.VolumeFlow, "m³/h"),
+                    new OutputValue("Pressure rise", pump.PressureRise, "bar"),
+                    new OutputValue("Head", pump.Head, headUnit),
+                    new OutputValue("Envelope position", pump.Position, "-"),
+                    new OutputValue("Max. head at this flow", pump.MaxHeadAtFlow, headUnit),
+                    new OutputValue("Min. head at this flow", pump.MinHeadAtFlow, headUnit),
+                    new OutputValue("Setpoint error", pump.SetpointError, "bar")
+                ];
             })
         };
     }
@@ -260,6 +414,38 @@ public static class BuiltInComponents
         };
     }
 
+    public static ComponentDescriptor Pipe() => new()
+    {
+        TypeId = nameof(CycleCalculator.CycleModel.Model.Pipe),
+        DisplayName = "Pipe",
+        Category = Categories.Flow,
+        NamePrefix = "Pipe",
+        Description = "Adiabatic pipe or flow resistance. The pressure drop scales with the mass flow: " +
+                      "Δp = Δp_nominal · (ṁ / ṁ_nominal)^n.",
+        Ports = Inline(),
+        Parameters =
+        [
+            new ParameterDescriptor("nominalPressureDrop", "Nominal pressure drop", ParameterKind.Number)
+            {
+                Unit = "bar", DefaultNumber = 0.5, Min = 0,
+                Help = "Pressure drop at the nominal mass flow. Zero gives an ideal pipe."
+            },
+            new ParameterDescriptor("nominalMassFlow", "Nominal mass flow", ParameterKind.Number)
+            {
+                Unit = "kg/s", DefaultNumber = 1, Min = 0, MinExclusive = true
+            },
+            new ParameterDescriptor("exponent", "Flow exponent", ParameterKind.Number)
+            {
+                Unit = "-", DefaultNumber = 2, Min = 1,
+                Help = "2 for fully turbulent flow, about 1.75 for smooth pipes, 1 for laminar flow."
+            }
+        ],
+        Create = c => new Pipe(c.Name, c.Fluid(), c.Backend(),
+            c.Number("nominalPressureDrop"), c.Number("nominalMassFlow"), c.Number("exponent")),
+        GetPort = Typed.Ports<Pipe>(("Inlet", p => p.Inlet), ("Outlet", p => p.Outlet)),
+        ReadOutputs = Typed.Outputs<Pipe>(p => [new OutputValue("Pressure drop", p.PressureDrop, "bar")])
+    };
+
     public static ComponentDescriptor Split() => new()
     {
         TypeId = nameof(CycleCalculator.CycleModel.Model.Split),
@@ -315,6 +501,7 @@ public static class BuiltInComponents
     public static ComponentDescriptor En12900Compressor()
     {
         static bool DischargeIsPressure(NodeModel node) => ChoiceIs(node, "dischargeCondition", "pressure");
+        static bool Controlled(NodeModel node) => ChoiceIs(node, "capacityControl", "pressure");
         const string Group = "compressors";
 
         string[] terms = ["c1 · 1", "c2 · S", "c3 · D", "c4 · S²", "c5 · S·D", "c6 · D²", "c7 · S³", "c8 · S²·D", "c9 · S·D²", "c10 · D³"];
@@ -329,8 +516,10 @@ public static class BuiltInComponents
             NamePrefix = "Comp",
             Description = "Compressor driven by EN 12900 mass flow and power polynomials. The mass flow is " +
                           "corrected from the map's nominal superheat to the actual suction density. Add more " +
-                          "compressors to model several running in parallel; their flows and powers add up.",
-            Ports = Inline(),
+                          "compressors to model several running in parallel; their flows and powers add up. With " +
+                          "pressure control, the compressors without a fixed operating frequency change speed to " +
+                          "hold a pressure measured through the signal input.",
+            Ports = CompressorPorts(Controlled),
             RepeatGroups =
             [
                 new RepeatGroupDescriptor(Group, "Compressor")
@@ -367,6 +556,25 @@ public static class BuiltInComponents
                         new ChoiceOption(nameof(En12900DischargeVariable.SaturationTemperature), "Discharge saturation temperature (°C)")
                     ]
                 },
+                new ParameterDescriptor("capacityControl", "Capacity control", ParameterKind.Choice)
+                {
+                    DefaultChoice = "none",
+                    Options =
+                    [
+                        new ChoiceOption("none", "None (operating frequencies)"),
+                        new ChoiceOption("pressure", "Pressure control (signal input)")
+                    ]
+                },
+                PressureSetpointParameter(Controlled),
+                new ParameterDescriptor("minFrequency", "Min. frequency", ParameterKind.Number)
+                {
+                    Unit = "Hz", DefaultNumber = 25, Min = 0, MinExclusive = true, IsActive = Controlled
+                },
+                new ParameterDescriptor("maxFrequency", "Max. frequency", ParameterKind.Number)
+                {
+                    Unit = "Hz", DefaultNumber = 70, Min = 0, MinExclusive = true, IsActive = Controlled
+                },
+                CompressorControlSignParameter(Controlled),
                 new ParameterDescriptor("nominalSuperheat", "Nominal suction superheat", ParameterKind.Number)
                 {
                     Unit = "K", DefaultNumber = 10, Min = 0,
@@ -382,7 +590,8 @@ public static class BuiltInComponents
                 {
                     Group = Group, Unit = "Hz", Optional = true, Min = 0, MinExclusive = true,
                     Help = "Optional. Mass flow, power and current scale linearly with operating / nominal " +
-                           "frequency. Leave empty to run at the nominal frequency."
+                           "frequency. Leave empty to run at the nominal frequency, or, with pressure control, to " +
+                           "follow the controller. Compressors with a value keep that speed."
                 },
                 new ParameterDescriptor("massFlowUnit", "Mass flow polynomial unit", ParameterKind.Choice)
                 {
@@ -446,10 +655,14 @@ public static class BuiltInComponents
                     Enum.Parse<En12900DischargeVariable>(c.Choice("dischargeVariable")),
                     c.Choice("dischargeCondition") == "pressure"
                         ? CompressorDischargeCondition.AtPressure(c.Number("dischargePressure"))
-                        : CompressorDischargeCondition.AtSaturationTemperature(c.Number("dischargeSaturationTemperature")));
+                        : CompressorDischargeCondition.AtSaturationTemperature(c.Number("dischargeSaturationTemperature")),
+                    Controlled(c.Node)
+                        ? PressureControl(c, c.Number("minFrequency"), c.Number("maxFrequency"))
+                        : null);
             },
             EnergyKind = EnergyKind.Power,
             GetPort = Typed.Ports<En12900Compressor>(("Inlet", s => s.Inlet), ("Outlet", s => s.Outlet)),
+            GetSignalPort = Typed.SignalPorts<En12900Compressor>(("Signal", s => s.SignalPort)),
             ReadOutputs = Typed.Outputs<En12900Compressor>(compressor =>
             {
                 En12900CompressorPerformance performance =
@@ -459,7 +672,9 @@ public static class BuiltInComponents
                     new("Power", performance.PowerKilowatts, "kW"),
                     new("Suction sat. temperature", performance.SuctionSaturationTemperature, "°C"),
                     new("Discharge sat. temperature", performance.DischargeSaturationTemperature, "°C"),
-                    new("Current", performance.CurrentAmperes, "A")
+                    new("Current", performance.CurrentAmperes, "A"),
+                    new("Controlled frequency", compressor.ControlledFrequency, "Hz"),
+                    new("Pressure error", compressor.PressureError, "bar")
                 ];
                 if (performance.Maps.Count > 1)
                 {
@@ -767,6 +982,47 @@ public static class BuiltInComponents
         new("Inlet2", "Inlet 2", PortKind.Fluid, PortDirection.Inlet, 1, 1, 0.75),
         new("Outlet2", "Outlet 2", PortKind.Fluid, PortDirection.Outlet, 1, 0, 0.75)
     ];
+
+    /// <summary>Inlet and outlet in line, with a signal input on top for pressure control.</summary>
+    private static PortDescriptor[] CompressorPorts(Func<NodeModel, bool> controlled) =>
+    [
+        .. Inline(),
+        new PortDescriptor("Signal", "Measurement", PortKind.SignalInput, PortDirection.Undefined, 0, 0.5, 0)
+        {
+            IsRequired = controlled
+        }
+    ];
+
+    private static ParameterDescriptor PressureSetpointParameter(Func<NodeModel, bool> controlled) =>
+        new("pressureSetpoint", "Pressure setpoint", ParameterKind.Number)
+        {
+            Unit = "bar", DefaultNumber = 30, Min = 0, MinExclusive = true, IsActive = controlled,
+            Help = "Pressure of the measured port the compressor controls to, e.g. its suction or a receiver pressure. " +
+                   "If it cannot be reached, the compressor stays at its capacity limit."
+        };
+
+    private static ParameterDescriptor CompressorControlSignParameter(Func<NodeModel, bool> controlled) =>
+        new("controlSign", "Control direction", ParameterKind.Choice)
+        {
+            DefaultChoice = "auto",
+            Options =
+            [
+                new ChoiceOption("auto", "Automatic"),
+                new ChoiceOption("negative", "More capacity lowers measured pressure (−1)"),
+                new ChoiceOption("positive", "More capacity raises measured pressure (+1)")
+            ],
+            IsActive = controlled,
+            Help = "A suction-side pressure falls with more capacity, a discharge-side pressure rises. Automatic " +
+                   "lets the solver determine it from the initial guess."
+        };
+
+    private static CompressorPressureControl PressureControl(BuildContext c, double? minimum, double? maximum) =>
+        new(c.Number("pressureSetpoint"), minimum, maximum,
+            c.Choice("controlSign") switch { "positive" => 1, "negative" => -1, _ => null });
+
+    /// <summary>Removes the " (Parameter 'x')" suffix .NET adds to argument exception messages.</summary>
+    private static string CleanMessage(ArgumentException ex) =>
+        ex.Message.IndexOf(" (Parameter '", StringComparison.Ordinal) is var index and >= 0 ? ex.Message[..index] : ex.Message;
 
     /// <summary>Inlet on the left, outlet on the right.</summary>
     private static PortDescriptor[] Inline(int stream = 0) =>

@@ -151,6 +151,7 @@ public static class Categories
     public const string Compressors = "Compressors";
     public const string Valves = "Valves";
     public const string HeatExchangers = "Heat exchangers";
+    public const string Pumps = "Pumps";
     public const string Flow = "Flow";
 }
 

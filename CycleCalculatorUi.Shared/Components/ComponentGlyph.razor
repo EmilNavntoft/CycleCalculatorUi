@@ -39,13 +39,27 @@ else
                     <circle class="body" cx="48" cy="32" r="18"/>
                     <path d="M36 18.5 62 26M36 45.5 62 38"/>
                     <path class="arrow" d="@(Arrow(19, 32, 'r') + Arrow(85, 32, 'r'))"/>
+                    <path class="signal-stem" d="M48 0v14"/>
                     break;
                 case "En12900Compressor":
                     <path class="pipe" d="M0 32h30M66 32h30"/>
                     <circle class="body" cx="48" cy="32" r="18"/>
                     <path d="M36 18.5 62 26M36 45.5 62 38"/>
                     <path class="arrow" d="@(Arrow(19, 32, 'r') + Arrow(85, 32, 'r'))"/>
+                    <path class="signal-stem" d="M48 0v14"/>
                     <path class="accent" d="M44 29h8M44 35h8"/>
+                    break;
+                case "Pump":
+                    <path class="pipe" d="M0 32h30M66 32h30"/>
+                    <circle class="body" cx="48" cy="32" r="18"/>
+                    <path d="M40 17.9 65.5 32 40 46.1"/>
+                    <path class="arrow" d="@(Arrow(19, 32, 'r') + Arrow(85, 32, 'r'))"/>
+                    break;
+                case "Pipe":
+                    <path class="pipe" d="M0 32h18M78 32h18"/>
+                    <rect class="body" x="18" y="22" width="60" height="20" rx="2"/>
+                    <path class="accent" d="M24 22v20M72 22v20"/>
+                    <path class="arrow" d="@(Arrow(14, 32, 'r') + Arrow(92, 32, 'r'))"/>
                     break;
                 case "ThreeWayValve":
                     <path class="pipe" d="M0 32h30M66 32h30M48 50v14"/>
