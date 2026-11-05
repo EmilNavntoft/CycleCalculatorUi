@@ -31,7 +31,7 @@ public sealed record PortDescriptor(
 
     /// <summary>
     /// For signal inputs: checks the node a connection measures (owner node, measured node and its descriptor) and
-    /// returns a problem, or null when the source is acceptable. E.g. a pump envelope signal must measure a pump.
+    /// returns a problem, or null when the source is acceptable. E.g. a pump envelope position must measure a pump.
     /// </summary>
     public Func<NodeModel, NodeModel, ComponentDescriptor, string?>? CheckSource { get; init; }
 }
@@ -77,6 +77,16 @@ public sealed record ParameterDescriptor(string Key, string Label, ParameterKind
     public string? Help { get; init; }
 
     public IReadOnlyList<ChoiceOption> Options { get; init; } = [];
+
+    /// <summary>
+    /// For choices whose sensible options depend on the document, e.g. the quantities a signal input's source can
+    /// provide: the options to show for a node. <see cref="Options"/> stays the full list of valid values.
+    /// </summary>
+    public Func<NodeModel, SystemDocument, ComponentCatalog, IReadOnlyList<ChoiceOption>>? OptionsFor { get; init; }
+
+    /// <summary>The options to show for <paramref name="node"/>; see <see cref="OptionsFor"/>.</summary>
+    public IReadOnlyList<ChoiceOption> OptionsShown(NodeModel node, SystemDocument document, ComponentCatalog catalog) =>
+        OptionsFor?.Invoke(node, document, catalog) ?? Options;
 
     /// <summary>Parameters are hidden and ignored when this returns false, e.g. when another mode is chosen.</summary>
     public Func<NodeModel, bool>? IsActive { get; init; }

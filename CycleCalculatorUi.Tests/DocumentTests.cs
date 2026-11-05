@@ -63,8 +63,9 @@ public class DocumentTests
     {
         SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
         NodeModel valve = document.Nodes.Single(n => n.TypeId == "ExpansionValve");
-        valve.Choices["mode"] = "superheat";
-        valve.Numbers["outletPressure"] = -5; // inactive in superheat mode, so not validated
+        valve.Choices["mode"] = "signal";
+        valve.Choices["controlSignal"] = "superheat";
+        valve.Numbers["outletPressure"] = -5; // inactive in signal mode, so not validated
 
         ValidationIssue issue = new ModelBuilder(Catalog).Validate(document).Single();
         Assert.That((issue.NodeId, issue.PortKey), Is.EqualTo((valve.Id, "Signal")));
@@ -85,7 +86,8 @@ public class DocumentTests
     {
         SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
         NodeModel valve = document.Nodes.Single(n => n.TypeId == "ExpansionValve");
-        valve.Choices["mode"] = "massFlow";
+        valve.Choices["mode"] = "signal";
+        valve.Choices["controlSignal"] = "massFlow";
         valve.Numbers["massFlowSetpoint"] = 0.05;
 
         ValidationIssue issue = new ModelBuilder(Catalog).Validate(document).Single();

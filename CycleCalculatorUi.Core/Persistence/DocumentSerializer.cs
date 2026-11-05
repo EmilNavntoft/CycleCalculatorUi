@@ -51,6 +51,9 @@ public static class DocumentSerializer
     /// <summary>Fills in settings that older files lack, so they solve as before.</summary>
     private static void Upgrade(SystemDocument document)
     {
+        // Safe to repeat: no current document uses the old modes or keys.
+        UpgradeControlModes(document);
+
         // EN 12900 compressors gained a per-compressor speed setting; before, any operating frequency applied.
         foreach (NodeModel node in document.Nodes.Where(n => n.TypeId == nameof(CycleCalculator.CycleModel.Model.En12900Compressor)))
         {
@@ -64,6 +67,70 @@ public static class DocumentSerializer
                     RepeatGroupDescriptor.ItemKey("operatingFrequency", index), out double? frequency) && frequency.HasValue;
                 node.Choices[speedKey] = hasFrequency ? "variable" : "fixed";
             }
+        }
+    }
+
+    /// <summary>
+    /// Format 1 had one control mode per measured quantity (e.g. an expansion valve's "superheat" mode). Controllers
+    /// now have one "signal" mode and choose the quantity with <see cref="BuiltInComponents.ControlSignalKey"/>.
+    /// </summary>
+    private static void UpgradeControlModes(SystemDocument document)
+    {
+        // The per-quantity error outputs of the setpoint controllers became one "Control error".
+        string[] controllers =
+        [
+            nameof(CycleCalculator.CycleModel.Model.ExpansionValve),
+            nameof(CycleCalculator.CycleModel.Model.ThreeWayValve),
+            nameof(CycleCalculator.CycleModel.Model.FixedEfficiencyHeatExchanger)
+        ];
+        foreach (Studies.StudyOutput output in document.Study?.Outputs ?? [])
+        {
+            if (output.Kind == Studies.StudyOutputKind.Component &&
+                output.Label is "Temperature error" or "Superheat error" or "Mass flow error" &&
+                document.FindNode(output.NodeId) is { } owner && controllers.Contains(owner.TypeId))
+                output.Label = "Control error";
+        }
+
+        foreach (NodeModel node in document.Nodes)
+        {
+            switch (node.TypeId)
+            {
+                case nameof(CycleCalculator.CycleModel.Model.ExpansionValve):
+                    MoveModeToSignal(node, "temperature", "superheat", "massFlow");
+                    break;
+                case nameof(CycleCalculator.CycleModel.Model.ThreeWayValve):
+                    MoveModeToSignal(node, "temperature", "massFlow");
+                    break;
+                case nameof(CycleCalculator.CycleModel.Model.FixedEfficiencyHeatExchanger):
+                    MoveModeToSignal(node, "temperature");
+                    RenameNumber(document, node, "targetTemperatureSetpoint", Measurements.Temperature.SetpointKey);
+                    break;
+                case nameof(CycleCalculator.CycleModel.Model.SimpleCompressor):
+                case nameof(CycleCalculator.CycleModel.Model.En12900Compressor):
+                    if (node.Choices.GetValueOrDefault(BuiltInComponents.ControlSignalKey) == "pumpEnvelope")
+                        node.Choices[BuiltInComponents.ControlSignalKey] = Measurements.PumpEnvelopePosition.Key;
+                    break;
+            }
+        }
+    }
+
+    private static void MoveModeToSignal(NodeModel node, params string[] quantities)
+    {
+        if (node.Choices.GetValueOrDefault("mode") is not { } mode || !quantities.Contains(mode))
+            return;
+        node.Choices["mode"] = "signal";
+        node.Choices[BuiltInComponents.ControlSignalKey] = mode;
+    }
+
+    /// <summary>Renames a stored number and the study variables that vary it.</summary>
+    private static void RenameNumber(SystemDocument document, NodeModel node, string oldKey, string newKey)
+    {
+        if (node.Numbers.Remove(oldKey, out double? value) && !node.Numbers.ContainsKey(newKey))
+            node.Numbers[newKey] = value;
+        foreach (Studies.StudyVariable variable in document.Study?.Variables ?? [])
+        {
+            if (variable.NodeId == node.Id && variable.ParameterKey == oldKey)
+                variable.ParameterKey = newKey;
         }
     }
 

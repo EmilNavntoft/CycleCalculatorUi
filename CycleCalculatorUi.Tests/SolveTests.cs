@@ -287,7 +287,7 @@ public class SolveTests
         NodeModel cool = builder.Add("TemperatureBoundary", "Cool branch", 200, 100, ("outletTemperature", 10));
         NodeModel merge = builder.Add("Merge", "Merge", 300, 0);
         SystemDocument document = builder
-            .Choice(valve, "mode", "massFlow")
+            .Choice(valve, "mode", "signal").Choice(valve, "controlSignal", "massFlow")
             .Connect(comp, "Outlet", valve, "Inlet")
             .Connect(valve, "Outlet", warm, "Inlet")
             .Connect(valve, "Outlet2", cool, "Inlet")
@@ -302,8 +302,9 @@ public class SolveTests
         Assert.That(result.Success, Is.True, result.Message);
         IReadOnlyList<OutputValue> outputs = result.Outputs[valve.Id];
         Assert.That(outputs.Single(o => o.Label == "Opening to outlet 1").Value, Is.EqualTo(0.3).Within(1e-6));
-        Assert.That(outputs.Single(o => o.Label == "Mass flow error").Value, Is.EqualTo(0).Within(1e-6));
-        Assert.That(outputs.Single(o => o.Label == "Temperature error").Value, Is.Null);
+        Assert.That(outputs.Single(o => o.Label == "Control error").Value, Is.EqualTo(0).Within(1e-6));
+        Assert.That(outputs.Single(o => o.Label == "Control error").Unit, Is.EqualTo("kg/s"));
+        Assert.That(outputs.Single(o => o.Label == "Measured value").Value, Is.EqualTo(0.3).Within(1e-6));
     }
 
     private static string NodeId(SystemDocument document, string name) => document.Nodes.Single(n => n.Name == name).Id;

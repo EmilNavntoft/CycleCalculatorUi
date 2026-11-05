@@ -77,7 +77,7 @@ public class CompressorCapacityControlTests
         NodeModel source = builder.Add("BoundaryCondition", "Source", 0, 0, ("pressure", 2), ("temperature", 20));
         builder.Choice(source, "thermal", "temperature");
         NodeModel comp = builder.Add("SimpleCompressor", "Comp1", 200, 0, ("dischargePressure", 3), ("envelopeSetpoint", 0.5));
-        builder.Choice(comp, "flowSpecification", "capacityControl").Choice(comp, "controlSignal", "pumpEnvelope");
+        builder.Choice(comp, "flowSpecification", "capacityControl").Choice(comp, "controlSignal", "Pump.envelopePosition");
         NodeModel pump = builder.Add("Pump", "Pump1", 400, 0);
         builder.Choice(pump, "headUnit", "Bar").Choice(pump, "control", "free");
         pump.Arrays["maxCurve"] = [2, 0, -0.01];
@@ -113,7 +113,7 @@ public class CompressorCapacityControlTests
 
         ValidationIssue issue = issues.Single(i => i.NodeId == comp.Id);
         Assert.That(issue.PortKey, Is.EqualTo("Signal"));
-        Assert.That(issue.Message, Does.Contain("needs a pump"));
+        Assert.That(issue.Message, Does.Contain("can only be measured on a pump"));
     }
 
     [Test]

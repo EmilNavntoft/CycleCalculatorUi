@@ -9,7 +9,7 @@
     <div class="field">
         <label>@parameter.Label</label>
         <select value="@current" @onchange="e => State.SetChoice(Node.Id, key, e.Value?.ToString() ?? current)">
-            @foreach (ChoiceOption option in parameter.Options)
+            @foreach (ChoiceOption option in parameter.OptionsShown(Node, State.Document, State.Catalog))
             {
                 <option value="@option.Value">@option.Label</option>
             }

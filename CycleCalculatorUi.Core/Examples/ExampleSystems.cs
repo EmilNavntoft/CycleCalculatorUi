@@ -101,11 +101,11 @@ public static class ExampleSystems
         NodeModel evaporator = b.Add("FixedUaHeatExchanger", "Evaporator", 704, 304, ("ua", 20));
         evaporator.FlipHorizontal = true;
         NodeModel valve = b.Add("ExpansionValve", "EXV", 912, 304, ("superheatSetpoint", 5));
-        b.Choice(valve, "mode", "superheat");
+        b.Choice(valve, "mode", "signal").Choice(valve, BuiltInComponents.ControlSignalKey, Measurements.Superheat.Key);
         valve.FlipHorizontal = true;
         NodeModel ihx = b.Add("FixedEfficiencyHeatExchanger", "IHX", 496, 80,
-            ("targetTemperatureSetpoint", 120), ("minEfficiency", 0.1), ("maxEfficiency", 0.9));
-        b.Choice(ihx, "mode", "temperature");
+            ("temperatureSetpoint", 120), ("minEfficiency", 0.1), ("maxEfficiency", 0.9));
+        b.Choice(ihx, "mode", "signal").Choice(ihx, BuiltInComponents.ControlSignalKey, Measurements.Temperature.Key);
 
         NodeModel sinkIn = b.Add("BoundaryCondition", "Water in (sink)", 336, 208, ("pressure", 2), ("temperature", 40));
         NodeModel sinkOut = b.Add("BoundaryCondition", "Water out (sink)", 240, 208, ("temperature", 80));

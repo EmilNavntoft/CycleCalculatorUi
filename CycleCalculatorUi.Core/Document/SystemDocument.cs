@@ -8,7 +8,10 @@ namespace CycleCalculatorUi.Core.Document;
 /// </summary>
 public sealed class SystemDocument
 {
-    public const int CurrentVersion = 1;
+    /// <summary>
+    /// 2: controllers select what they measure (<c>controlSignal</c>) instead of having one mode per measured quantity.
+    /// </summary>
+    public const int CurrentVersion = 2;
 
     public int Version { get; set; } = CurrentVersion;
 
