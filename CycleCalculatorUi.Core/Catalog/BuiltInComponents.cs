@@ -903,8 +903,8 @@ public static class BuiltInComponents
     [
         new ParameterDescriptor("profileModel", "Profile model", ParameterKind.Choice)
         {
-            DefaultChoice = "discretized",
-            Options = [new ChoiceOption("discretized", "Discretized"), new ChoiceOption("movingBoundary", "Moving boundary")],
+            DefaultChoice = "movingBoundary",
+            Options = [new ChoiceOption("movingBoundary", "Moving boundary"), new ChoiceOption("discretized", "Discretized")],
             Help = "Discretized evaluates both fluids at fixed points along the exchanger for every trial heat flow. " +
                    "Moving boundary splits each stream into zones at its phase changes and evaluates the fluids only " +
                    "to build those zones, which needs far fewer property calls, especially with the HEOS backend."

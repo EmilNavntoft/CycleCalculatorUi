@@ -135,7 +135,15 @@ function boxInWorld(state, element) {
 
 // ---------- gestures ----------
 
+// preventDefault() on pointerdown keeps focus where it was, so a parameter field being edited would never
+// blur and its change event (which commits the value) would never fire. Blur it explicitly first.
+function commitFocusedField() {
+    const active = document.activeElement;
+    if (active && active.matches("input, textarea, select, [contenteditable='true']")) active.blur();
+}
+
 function pointerDown(state, event) {
+    commitFocusedField();
     if (state.pending && !event.target.closest("[data-port-key]")) {
         cancelPending(state);
     }
@@ -362,6 +370,7 @@ function keyDown(state, event) {
 function palettePointerDown(state, event) {
     const item = event.target.closest("[data-palette-type]");
     if (!item || event.button !== 0) return;
+    commitFocusedField();
     event.preventDefault();
     state.palette = { type: item.dataset.paletteType, item, startX: event.clientX, startY: event.clientY, moved: false };
 }
