@@ -100,13 +100,15 @@ public static class BuiltInComponents
         ],
         Create = c => new TemperatureBoundary(c.Name, c.Fluid(), c.Backend(), c.Number("outletTemperature")),
         EnergyKind = EnergyKind.Heat,
-        GetPort = Typed.Ports<TemperatureBoundary>(("Inlet", t => t.Inlet), ("Outlet", t => t.Outlet))
+        GetPort = Typed.Ports<TemperatureBoundary>(("Inlet", t => t.Inlet), ("Outlet", t => t.Outlet)),
+        ReadOutputs = Typed.Outputs<TemperatureBoundary>(t =>
+            [new OutputValue("Heat flow", Math.Abs(t.Inlet.MassFlow * (t.Outlet.Enthalpy - t.Inlet.Enthalpy)), "kW")])
     };
 
     public static ComponentDescriptor SimpleCompressor()
     {
         static bool ByVolume(NodeModel node) => ChoiceIs(node, "flowSpecification", "volumeFlow");
-        static bool Controlled(NodeModel node) => ChoiceIs(node, "flowSpecification", "pressureControl");
+        static bool Controlled(NodeModel node) => ChoiceIs(node, "flowSpecification", "capacityControl");
 
         return new ComponentDescriptor
         {
@@ -115,8 +117,8 @@ public static class BuiltInComponents
             Category = Categories.Compressors,
             NamePrefix = "Comp",
             Description = "Compressor with a fixed isentropic efficiency and discharge pressure. The flow can be " +
-                          "given as a mass flow or as a suction volume flow, or adjusted to hold a pressure measured " +
-                          "through the signal input.",
+                          "given as a mass flow or as a suction volume flow, or adjusted to hold a pressure, a " +
+                          "pump's envelope position or a heat transfer measured through the signal input.",
             Ports = CompressorPorts(Controlled),
             Parameters =
             [
@@ -135,7 +137,7 @@ public static class BuiltInComponents
                     [
                         new ChoiceOption("massFlow", "Mass flow"),
                         new ChoiceOption("volumeFlow", "Suction volume flow"),
-                        new ChoiceOption("pressureControl", "Pressure control (signal input)")
+                        new ChoiceOption("capacityControl", "Capacity control (signal input)")
                     ]
                 },
                 new ParameterDescriptor("massFlow", "Mass flow", ParameterKind.Number)
@@ -149,7 +151,7 @@ public static class BuiltInComponents
                     Help = "Volume flow at the suction state; the mass flow follows from the suction density. " +
                            "Leave empty to let the rest of the system determine the flow."
                 },
-                PressureSetpointParameter(Controlled),
+                .. ControlSignalParameters(Controlled),
                 new ParameterDescriptor("minMassFlow", "Min. mass flow", ParameterKind.Number)
                 {
                     Unit = "kg/s", Optional = true, Min = 0, IsActive = Controlled,
@@ -166,7 +168,7 @@ public static class BuiltInComponents
                 c.Number("isentropicEfficiency"), c.Number("dischargePressure"), c.OptionalNumber("massFlow"),
                 c.OptionalNumber("suctionVolumeFlow") / 3600,
                 Controlled(c.Node)
-                    ? PressureControl(c, c.OptionalNumber("minMassFlow"), c.OptionalNumber("maxMassFlow"))
+                    ? CapacityControl(c, c.OptionalNumber("minMassFlow"), c.OptionalNumber("maxMassFlow"))
                     : null),
             EnergyKind = EnergyKind.Power,
             GetPort = Typed.Ports<SimpleCompressor>(("Inlet", s => s.Inlet), ("Outlet", s => s.Outlet)),
@@ -178,7 +180,7 @@ public static class BuiltInComponents
                 return
                 [
                     new OutputValue("Suction volume flow", Math.Abs(compressor.Inlet.MassFlow) / density * 3600, "m³/h"),
-                    new OutputValue("Pressure error", compressor.PressureError, "bar")
+                    new OutputValue("Control error", compressor.ControlError, ControlErrorUnit(compressor.CapacityControl))
                 ];
             })
         };
@@ -501,7 +503,9 @@ public static class BuiltInComponents
     public static ComponentDescriptor En12900Compressor()
     {
         static bool DischargeIsPressure(NodeModel node) => ChoiceIs(node, "dischargeCondition", "pressure");
-        static bool Controlled(NodeModel node) => ChoiceIs(node, "capacityControl", "pressure");
+        static bool Controlled(NodeModel node) => ChoiceIs(node, "capacityControl", "signal");
+        static bool VariableSpeed(NodeModel node, int index) =>
+            ChoiceIs(node, RepeatGroupDescriptor.ItemKey(SpeedControlKey, index), "variable");
         const string Group = "compressors";
 
         string[] terms = ["c1 · 1", "c2 · S", "c3 · D", "c4 · S²", "c5 · S·D", "c6 · D²", "c7 · S³", "c8 · S²·D", "c9 · S·D²", "c10 · D³"];
@@ -517,14 +521,16 @@ public static class BuiltInComponents
             Description = "Compressor driven by EN 12900 mass flow and power polynomials. The mass flow is " +
                           "corrected from the map's nominal superheat to the actual suction density. Add more " +
                           "compressors to model several running in parallel; their flows and powers add up. With " +
-                          "pressure control, the compressors without a fixed operating frequency change speed to " +
-                          "hold a pressure measured through the signal input.",
+                          "speed control, the variable-speed compressors change frequency to " +
+                          "hold a pressure, a pump's envelope position or a heat transfer measured through the " +
+                          "signal input.",
             Ports = CompressorPorts(Controlled),
             RepeatGroups =
             [
                 new RepeatGroupDescriptor(Group, "Compressor")
                 {
-                    Help = "Compressors in parallel share the suction and discharge conditions, units and nominal superheat."
+                    Help = "Compressors in parallel share the suction and discharge conditions, units and nominal superheat. " +
+                           "Only variable-speed compressors can run away from their nominal frequency."
                 }
             ],
             Parameters =
@@ -562,10 +568,10 @@ public static class BuiltInComponents
                     Options =
                     [
                         new ChoiceOption("none", "None (operating frequencies)"),
-                        new ChoiceOption("pressure", "Pressure control (signal input)")
+                        new ChoiceOption("signal", "Speed control (signal input)")
                     ]
                 },
-                PressureSetpointParameter(Controlled),
+                .. ControlSignalParameters(Controlled),
                 new ParameterDescriptor("minFrequency", "Min. frequency", ParameterKind.Number)
                 {
                     Unit = "Hz", DefaultNumber = 25, Min = 0, MinExclusive = true, IsActive = Controlled
@@ -586,12 +592,23 @@ public static class BuiltInComponents
                     Min = 0, MinExclusive = true,
                     Help = "Compressor frequency at which the polynomials were measured."
                 },
+                new ParameterDescriptor(SpeedControlKey, "Speed", ParameterKind.Choice)
+                {
+                    Group = Group, DefaultChoice = "fixed",
+                    Options =
+                    [
+                        new ChoiceOption("fixed", "Fixed speed (nominal frequency)"),
+                        new ChoiceOption("variable", "Variable speed (frequency controlled)")
+                    ],
+                    Help = "A fixed-speed compressor always runs at its nominal frequency. A variable-speed one can be " +
+                           "given an operating frequency, or follows the speed controller when that is on."
+                },
                 new ParameterDescriptor("operatingFrequency", "Operating frequency", ParameterKind.Number)
                 {
                     Group = Group, Unit = "Hz", Optional = true, Min = 0, MinExclusive = true,
+                    IsActive = node => !Controlled(node), IsActiveForItem = VariableSpeed,
                     Help = "Optional. Mass flow, power and current scale linearly with operating / nominal " +
-                           "frequency. Leave empty to run at the nominal frequency, or, with pressure control, to " +
-                           "follow the controller. Compressors with a value keep that speed."
+                           "frequency. Leave empty to run at the nominal frequency."
                 },
                 new ParameterDescriptor("massFlowUnit", "Mass flow polynomial unit", ParameterKind.Choice)
                 {
@@ -647,7 +664,8 @@ public static class BuiltInComponents
                         new En12900Polynomial(c.Coefficients(RepeatGroupDescriptor.ItemKey("massFlowPolynomial", index)), superheat, nominalFrequency),
                         new En12900Polynomial(c.Coefficients(RepeatGroupDescriptor.ItemKey("powerPolynomial", index)), superheat, nominalFrequency),
                         current is null ? null : new En12900Polynomial(current, superheat, nominalFrequency),
-                        c.OptionalNumber(RepeatGroupDescriptor.ItemKey("operatingFrequency", index)));
+                        c.OptionalNumber(RepeatGroupDescriptor.ItemKey("operatingFrequency", index)),
+                        VariableSpeed(c.Node, index));
                 }).ToArray();
                 return new En12900Compressor(c.Name, c.Fluid(), c.Backend(), maps,
                     Enum.Parse<En12900MassFlowUnit>(c.Choice("massFlowUnit")),
@@ -657,7 +675,7 @@ public static class BuiltInComponents
                         ? CompressorDischargeCondition.AtPressure(c.Number("dischargePressure"))
                         : CompressorDischargeCondition.AtSaturationTemperature(c.Number("dischargeSaturationTemperature")),
                     Controlled(c.Node)
-                        ? PressureControl(c, c.Number("minFrequency"), c.Number("maxFrequency"))
+                        ? CapacityControl(c, c.Number("minFrequency"), c.Number("maxFrequency"))
                         : null);
             },
             EnergyKind = EnergyKind.Power,
@@ -674,7 +692,7 @@ public static class BuiltInComponents
                     new("Discharge sat. temperature", performance.DischargeSaturationTemperature, "°C"),
                     new("Current", performance.CurrentAmperes, "A"),
                     new("Controlled frequency", compressor.ControlledFrequency, "Hz"),
-                    new("Pressure error", compressor.PressureError, "bar")
+                    new("Control error", compressor.ControlError, ControlErrorUnit(compressor.CapacityControl))
                 ];
                 if (performance.Maps.Count > 1)
                 {
@@ -983,23 +1001,85 @@ public static class BuiltInComponents
         new("Outlet2", "Outlet 2", PortKind.Fluid, PortDirection.Outlet, 1, 0, 0.75)
     ];
 
-    /// <summary>Inlet and outlet in line, with a signal input on top for pressure control.</summary>
+    /// <summary>Per-compressor choice of an EN 12900 compressor: fixed or variable speed.</summary>
+    public const string SpeedControlKey = "speedControl";
+
+    private static bool MeasuresPump(NodeModel node) => ChoiceIs(node, "controlSignal", "pumpEnvelope");
+
+    private static bool MeasuresHeat(NodeModel node) => ChoiceIs(node, "controlSignal", "heatTransfer");
+
+    private static bool MeasuresPressure(NodeModel node) => !MeasuresPump(node) && !MeasuresHeat(node);
+
+    private static string? CheckControlSource(NodeModel node, NodeModel measured, ComponentDescriptor descriptor)
+    {
+        if (MeasuresPump(node) && measured.TypeId != nameof(CycleCalculator.CycleModel.Model.Pump))
+            return $"the signal input measures '{measured.Name}', but a pump envelope position needs a pump. " +
+                   "Connect it to the pump's inlet or outlet.";
+        if (MeasuresHeat(node) && descriptor.EnergyKind is not (EnergyKind.Heat or EnergyKind.Exchanger))
+            return $"the signal input measures '{measured.Name}', which does not exchange heat. Connect it to a " +
+                   "port of the heat exchanger stream whose heat transfer should be controlled.";
+        return null;
+    }
+
+    /// <summary>Inlet and outlet in line, with a signal input on top for capacity control.</summary>
     private static PortDescriptor[] CompressorPorts(Func<NodeModel, bool> controlled) =>
     [
         .. Inline(),
         new PortDescriptor("Signal", "Measurement", PortKind.SignalInput, PortDirection.Undefined, 0, 0.5, 0)
         {
-            IsRequired = controlled
+            IsRequired = controlled,
+            CheckSource = (node, measured, descriptor) =>
+                controlled(node) ? CheckControlSource(node, measured, descriptor) : null
         }
     ];
 
-    private static ParameterDescriptor PressureSetpointParameter(Func<NodeModel, bool> controlled) =>
+    private static ParameterDescriptor[] ControlSignalParameters(Func<NodeModel, bool> controlled) =>
+    [
+        new("controlSignal", "Measured quantity", ParameterKind.Choice)
+        {
+            DefaultChoice = "pressure",
+            Options =
+            [
+                new ChoiceOption("pressure", "Pressure"),
+                new ChoiceOption("pumpEnvelope", "Pump envelope position"),
+                new ChoiceOption("heatTransfer", "Heat transfer")
+            ],
+            IsActive = controlled,
+            Help = "What the signal input measures: the pressure of the connected port, the envelope position of " +
+                   "the pump it is connected to (0 on its minimum curve, 1 on its maximum curve), or the heat " +
+                   "transferred in the heat exchanger stream it is connected to."
+        },
         new("pressureSetpoint", "Pressure setpoint", ParameterKind.Number)
         {
-            Unit = "bar", DefaultNumber = 30, Min = 0, MinExclusive = true, IsActive = controlled,
+            Unit = "bar", DefaultNumber = 30, Min = 0, MinExclusive = true,
+            IsActive = node => controlled(node) && MeasuresPressure(node),
             Help = "Pressure of the measured port the compressor controls to, e.g. its suction or a receiver pressure. " +
                    "If it cannot be reached, the compressor stays at its capacity limit."
-        };
+        },
+        new("envelopeSetpoint", "Envelope position setpoint", ParameterKind.Number)
+        {
+            Unit = "-", DefaultNumber = 0.8, Min = 0, Max = 1,
+            IsActive = node => controlled(node) && MeasuresPump(node),
+            Help = "Envelope position of the measured pump the compressor controls to: 0 on its minimum curve, 1 on " +
+                   "its maximum curve. If it cannot be reached, the compressor stays at its capacity limit."
+        },
+        new("heatTransferSetpoint", "Heat transfer setpoint", ParameterKind.Number)
+        {
+            Unit = "kW", DefaultNumber = 10, Min = 0, MinExclusive = true,
+            IsActive = node => controlled(node) && MeasuresHeat(node),
+            Help = "Heat transferred in the measured stream, e.g. an evaporator's cooling capacity, the heat a " +
+                   "condenser gives to its water stream, or the heat a fixed-outlet-temperature heater/cooler adds or " +
+                   "removes (connect to a port of that stream). If it cannot be reached, the compressor stays at its " +
+                   "capacity limit."
+        }
+    ];
+
+    private static string ControlErrorUnit(CompressorCapacityControl? control) => control?.Signal switch
+    {
+        CompressorControlSignal.PumpEnvelopePosition => "-",
+        CompressorControlSignal.HeatTransferRate => "kW",
+        _ => "bar"
+    };
 
     private static ParameterDescriptor CompressorControlSignParameter(Func<NodeModel, bool> controlled) =>
         new("controlSign", "Control direction", ParameterKind.Choice)
@@ -1008,17 +1088,23 @@ public static class BuiltInComponents
             Options =
             [
                 new ChoiceOption("auto", "Automatic"),
-                new ChoiceOption("negative", "More capacity lowers measured pressure (−1)"),
-                new ChoiceOption("positive", "More capacity raises measured pressure (+1)")
+                new ChoiceOption("negative", "More capacity lowers the measured value (−1)"),
+                new ChoiceOption("positive", "More capacity raises the measured value (+1)")
             ],
             IsActive = controlled,
-            Help = "A suction-side pressure falls with more capacity, a discharge-side pressure rises. Automatic " +
+            Help = "E.g. a suction-side pressure falls with more capacity, a discharge-side pressure rises. Automatic " +
                    "lets the solver determine it from the initial guess."
         };
 
-    private static CompressorPressureControl PressureControl(BuildContext c, double? minimum, double? maximum) =>
-        new(c.Number("pressureSetpoint"), minimum, maximum,
-            c.Choice("controlSign") switch { "positive" => 1, "negative" => -1, _ => null });
+    private static CompressorCapacityControl CapacityControl(BuildContext c, double? minimum, double? maximum)
+    {
+        int? sign = c.Choice("controlSign") switch { "positive" => 1, "negative" => -1, _ => null };
+        if (MeasuresPump(c.Node))
+            return CompressorCapacityControl.ToPumpEnvelopePosition(c.Number("envelopeSetpoint"), minimum, maximum, sign);
+        if (MeasuresHeat(c.Node))
+            return CompressorCapacityControl.ToHeatTransferRate(c.Number("heatTransferSetpoint"), minimum, maximum, sign);
+        return CompressorCapacityControl.ToPressure(c.Number("pressureSetpoint"), minimum, maximum, sign);
+    }
 
     /// <summary>Removes the " (Parameter 'x')" suffix .NET adds to argument exception messages.</summary>
     private static string CleanMessage(ArgumentException ex) =>

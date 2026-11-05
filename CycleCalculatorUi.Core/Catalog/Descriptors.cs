@@ -28,6 +28,12 @@ public sealed record PortDescriptor(
     public Func<NodeModel, bool>? IsRequired { get; init; }
 
     public bool Required(NodeModel node) => IsRequired?.Invoke(node) ?? Kind == PortKind.Fluid;
+
+    /// <summary>
+    /// For signal inputs: checks the node a connection measures (owner node, measured node and its descriptor) and
+    /// returns a problem, or null when the source is acceptable. E.g. a pump envelope signal must measure a pump.
+    /// </summary>
+    public Func<NodeModel, NodeModel, ComponentDescriptor, string?>? CheckSource { get; init; }
 }
 
 public enum ParameterKind
@@ -81,7 +87,19 @@ public sealed record ParameterDescriptor(string Key, string Label, ParameterKind
     /// </summary>
     public string? Group { get; init; }
 
+    /// <summary>
+    /// For grouped parameters: hides the parameter for single group items, given the node and the zero-based item
+    /// index, e.g. an operating frequency only for the variable-speed compressors. Applies on top of <see cref="IsActive"/>.
+    /// </summary>
+    public Func<NodeModel, int, bool>? IsActiveForItem { get; init; }
+
     public bool Active(NodeModel node) => IsActive?.Invoke(node) ?? true;
+
+    /// <summary>Whether the parameter is active for the group item at zero-based <paramref name="index"/>.</summary>
+    public bool Active(NodeModel node, int index) => Active(node) && (IsActiveForItem?.Invoke(node, index) ?? true);
+
+    /// <summary>Whether the value stored under <paramref name="key"/> (e.g. "key#2") is active.</summary>
+    public bool ActiveForKey(NodeModel node, string key) => Active(node, RepeatGroupDescriptor.Parse(key).Index);
 }
 
 /// <summary>
@@ -220,7 +238,10 @@ public sealed class ComponentDescriptor
             }
 
             for (int index = 0; index < group.Count(node); index++)
-                yield return new ParameterInstance(parameter, RepeatGroupDescriptor.ItemKey(parameter.Key, index), group, index);
+            {
+                if (parameter.Active(node, index))
+                    yield return new ParameterInstance(parameter, RepeatGroupDescriptor.ItemKey(parameter.Key, index), group, index);
+            }
         }
     }
 
@@ -270,7 +291,7 @@ public sealed class BuildContext(NodeModel node, ComponentDescriptor descriptor,
     {
         ParameterDescriptor parameter = descriptor.FindParameter(key)
                                         ?? throw new InvalidOperationException($"Unknown parameter '{key}'.");
-        if (!parameter.Active(Node))
+        if (!parameter.ActiveForKey(Node, key))
             return null;
         return Node.Numbers.TryGetValue(key, out double? value) ? value : parameter.DefaultNumber;
     }
@@ -289,7 +310,7 @@ public sealed class BuildContext(NodeModel node, ComponentDescriptor descriptor,
     {
         ParameterDescriptor parameter = descriptor.FindParameter(key)
                                         ?? throw new InvalidOperationException($"Unknown parameter '{key}'.");
-        if (!parameter.Active(Node))
+        if (!parameter.ActiveForKey(Node, key))
             return null;
         return Node.Arrays.TryGetValue(key, out double[]? value) ? value : parameter.DefaultCoefficients;
     }

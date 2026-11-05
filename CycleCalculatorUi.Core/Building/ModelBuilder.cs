@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using CycleCalculator.CycleModel.Model.BaseComponents;
 using CycleCalculator.CycleModel.Model.Connectors;
 using CycleCalculatorUi.Core.Catalog;
@@ -90,6 +90,16 @@ public sealed class ModelBuilder(ComponentCatalog catalog)
             {
                 issues.Add(new ValidationIssue(IssueSeverity.Error, "A connection refers to a missing port.",
                     ConnectionId: connection.Id));
+            }
+            else if (connection.Kind == ConnectionKind.Signal &&
+                     document.FindNode(connection.To.NodeId) is { } target &&
+                     document.FindNode(connection.From.NodeId) is { } measured &&
+                     catalog.Find(measured.TypeId) is { } measuredDescriptor &&
+                     catalog.Find(target.TypeId)?.FindPort(connection.To.PortKey)?.CheckSource is { } check &&
+                     check(target, measured, measuredDescriptor) is { } problem)
+            {
+                issues.Add(new ValidationIssue(IssueSeverity.Error, $"{target.Name}: {problem}", target.Id,
+                    PortKey: connection.To.PortKey, ConnectionId: connection.Id));
             }
         }
 

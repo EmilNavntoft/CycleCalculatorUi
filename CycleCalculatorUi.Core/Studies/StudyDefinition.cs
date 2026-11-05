@@ -1,4 +1,4 @@
-using CycleCalculatorUi.Core.Catalog;
+﻿using CycleCalculatorUi.Core.Catalog;
 using CycleCalculatorUi.Core.Document;
 
 namespace CycleCalculatorUi.Core.Studies;
@@ -138,7 +138,7 @@ public sealed class StudyDefinition
                 continue;
             }
 
-            if (!parameter.Active(node))
+            if (!parameter.ActiveForKey(node, variable.ParameterKey))
                 problems.Add($"{name}: the parameter is not used in the component's current mode.");
             if (variable.Steps < 1)
                 problems.Add($"{name}: needs at least one step.");

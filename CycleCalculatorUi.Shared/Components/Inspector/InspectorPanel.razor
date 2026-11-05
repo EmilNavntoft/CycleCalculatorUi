@@ -62,7 +62,7 @@
                                                 @onclick="() => State.RemoveGroupItem(node.Id, groupKey, index)">Remove</button>
                                     }
                                 </legend>
-                                @foreach (ParameterDescriptor member in members)
+                                @foreach (ParameterDescriptor member in members.Where(m => m.Active(node, index)))
                                 {
                                     string key = RepeatGroupDescriptor.ItemKey(member.Key, index);
                                     <ParameterField State="State" Node="node" Instance="new ParameterInstance(member, key, group, index)"

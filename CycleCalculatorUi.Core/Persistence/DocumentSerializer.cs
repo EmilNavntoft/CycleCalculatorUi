@@ -1,7 +1,8 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using CycleCalculatorUi.Core.Catalog;
 using CycleCalculatorUi.Core.Document;
 
 namespace CycleCalculatorUi.Core.Persistence;
@@ -42,8 +43,28 @@ public static class DocumentSerializer
             throw new InvalidDataException(
                 $"The file was saved by a newer version of the editor (format {document.Version}).");
 
+        Upgrade(document);
         document.Version = SystemDocument.CurrentVersion;
         return document;
+    }
+
+    /// <summary>Fills in settings that older files lack, so they solve as before.</summary>
+    private static void Upgrade(SystemDocument document)
+    {
+        // EN 12900 compressors gained a per-compressor speed setting; before, any operating frequency applied.
+        foreach (NodeModel node in document.Nodes.Where(n => n.TypeId == nameof(CycleCalculator.CycleModel.Model.En12900Compressor)))
+        {
+            int count = Math.Max(1, node.GroupCounts.GetValueOrDefault("compressors", 1));
+            for (int index = 0; index < count; index++)
+            {
+                string speedKey = RepeatGroupDescriptor.ItemKey(BuiltInComponents.SpeedControlKey, index);
+                if (node.Choices.ContainsKey(speedKey))
+                    continue;
+                bool hasFrequency = node.Numbers.TryGetValue(
+                    RepeatGroupDescriptor.ItemKey("operatingFrequency", index), out double? frequency) && frequency.HasValue;
+                node.Choices[speedKey] = hasFrequency ? "variable" : "fixed";
+            }
+        }
     }
 
     public static SystemDocument Clone(SystemDocument document) =>

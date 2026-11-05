@@ -5,6 +5,7 @@ using CycleCalculatorUi.Core.Editing;
 using CycleCalculatorUi.Core.Examples;
 using CycleCalculatorUi.Core.Persistence;
 using CycleCalculatorUi.Core.Solving;
+using CycleCalculator.CycleModel.Model;
 using NUnit.Framework;
 
 namespace CycleCalculatorUi.Tests;
@@ -104,5 +105,75 @@ public class ParallelCompressorTests
         Assert.That(Output("Power"), Is.EqualTo(2 * Output("Compressor 1 power")).Within(1e-9));
         Assert.That(result.Port(node.Id, "Inlet")!.MassFlow,
             Is.EqualTo(Output("Compressor 1 mass flow") + Output("Compressor 2 mass flow")).Within(1e-6));
+    }
+
+    private static En12900Compressor Build(SystemDocument document, NodeModel node)
+    {
+        BuildResult build = new ModelBuilder(ComponentCatalog.Default).Build(document);
+        Assert.That(build.Success, Is.True, string.Join("; ", build.Issues.Select(i => i.Message)));
+        return (En12900Compressor)build.ComponentsByNode[node.Id];
+    }
+
+    [Test]
+    public void OnlyVariableSpeedCompressors_ShowAndUseAnOperatingFrequency()
+    {
+        (EditorState state, NodeModel node) = EditorWithCompressor();
+        state.AddGroupItem(node.Id, Group);
+        node = state.Document.FindNode(node.Id)!;
+        node.Numbers["operatingFrequency"] = 40;    // compressor 1 stays fixed speed: ignored
+        node.Choices["speedControl#2"] = "variable";
+        node.Numbers["operatingFrequency#2"] = 60;
+
+        ComponentDescriptor descriptor = ComponentCatalog.Default.Get(node.TypeId);
+        List<string> keys = descriptor.ParameterInstances(node).Select(i => i.Key).ToList();
+        Assert.That(keys, Does.Not.Contain("operatingFrequency"));
+        Assert.That(keys, Does.Contain("operatingFrequency#2"));
+
+        En12900Compressor compressor = Build(state.Document, node);
+        Assert.That(compressor.Maps[0].IsFrequencyControlled, Is.False);
+        Assert.That(compressor.Maps[0].OperatingFrequency, Is.Null);
+        Assert.That(compressor.Maps[1].IsFrequencyControlled, Is.True);
+        Assert.That(compressor.Maps[1].OperatingFrequency, Is.EqualTo(60));
+    }
+
+    [Test]
+    public void SpeedControlWithOnlyFixedSpeedCompressors_IsAnError()
+    {
+        (EditorState state, NodeModel node) = EditorWithCompressor();
+        node = state.Document.FindNode(node.Id)!;
+        node.Choices["capacityControl"] = "signal";
+        state.Document.Connections.Add(new ConnectionModel
+        {
+            Kind = ConnectionKind.Signal, From = new PortRef(node.Id, "Inlet"), To = new PortRef(node.Id, "Signal")
+        });
+
+        BuildResult build = new ModelBuilder(ComponentCatalog.Default).Build(state.Document);
+
+        Assert.That(build.Success, Is.False);
+        Assert.That(build.Issues.Single(i => i.NodeId == node.Id).Message, Does.Contain("variable speed"));
+
+        node.Choices["speedControl"] = "variable";
+        node.Numbers["operatingFrequency"] = 40;    // hidden while the controller sets the speed
+        Assert.That(Build(state.Document, node).Maps[0].OperatingFrequency, Is.Null);
+    }
+
+    [Test]
+    public void OldDocumentsWithAnOperatingFrequency_LoadAsVariableSpeed()
+    {
+        SystemDocument document = ExampleSystems.EjectorHeatPump();
+        NodeModel node = document.Nodes.Single(n => n.Name == "Comp1");
+        node.GroupCounts[Group] = 2;
+        node.Numbers["operatingFrequency#2"] = 45;
+        node.Arrays["massFlowPolynomial#2"] = node.Arrays["massFlowPolynomial"];
+        node.Arrays["powerPolynomial#2"] = node.Arrays["powerPolynomial"];
+        node.Choices.Remove("speedControl");
+        string json = DocumentSerializer.Serialize(document);
+
+        document = DocumentSerializer.Deserialize(json);
+        node = document.Nodes.Single(n => n.Id == node.Id);
+
+        Assert.That(node.Choices["speedControl"], Is.EqualTo("fixed"));
+        Assert.That(node.Choices["speedControl#2"], Is.EqualTo("variable"));
+        Assert.That(Build(document, node).Maps[1].OperatingFrequency, Is.EqualTo(45));
     }
 }
