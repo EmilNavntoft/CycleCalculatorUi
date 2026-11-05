@@ -165,6 +165,26 @@ kbd {
 
 .toolbar-group { display: flex; align-items: center; gap: 4px; padding-left: 12px; border-left: 1px solid var(--border); }
 .toolbar .examples { width: 190px; }
+
+.confirm-anchor { position: relative; display: inline-flex; }
+.confirm-popover {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 260px;
+    padding: 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--surface);
+    box-shadow: var(--shadow);
+    font-size: 13px;
+}
+.confirm-popover span { color: var(--muted); }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 4px; }
 .toggle { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; color: var(--muted); cursor: pointer; user-select: none; }
 .spacer { flex: 1; }
 

@@ -11,7 +11,21 @@
     <header class="toolbar">
         <div class="brand"><span class="brand-mark">C</span><span>Cycle Calculator</span></div>
         <div class="toolbar-group">
-            <button type="button" class="ghost" title="New system" @onclick="NewDocument">New</button>
+            <span class="confirm-anchor">
+                <button type="button" class="ghost" title="New system" @onclick="NewDocument">New</button>
+                @if (_confirmNew)
+                {
+                    <div class="confirm-popover" role="alertdialog" aria-label="Clear the canvas?"
+                         @onkeydown="OnConfirmKeyDown">
+                        <strong>Start a new system?</strong>
+                        <span>The current diagram will be cleared. Unsaved changes are lost.</span>
+                        <div class="confirm-actions">
+                            <button type="button" class="secondary" @onclick="() => _confirmNew = false">Cancel</button>
+                            <button type="button" class="danger" @onclick="ConfirmNewDocument">Clear canvas</button>
+                        </div>
+                    </div>
+                }
+            </span>
             @if (Files.HasOpenDialog)
             {
                 <button type="button" class="ghost" title="Open (Ctrl+O)" @onclick="OpenAsync">Open</button>
@@ -104,6 +118,7 @@
     private bool _showValues = true;
     private string? _message;
     private int _exampleKey;
+    private bool _confirmNew;
     private CancellationTokenSource? _messageTimer;
 
     private static readonly FileType CycleFile = new("Cycle system", DocumentSerializer.FileExtension);
@@ -255,6 +270,21 @@
 
     private void NewDocument()
     {
+        if (State.Document.Nodes.Count == 0)
+            ConfirmNewDocument();
+        else
+            _confirmNew = !_confirmNew;
+    }
+
+    private void OnConfirmKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+            _confirmNew = false;
+    }
+
+    private void ConfirmNewDocument()
+    {
+        _confirmNew = false;
         State.New();
         _canvas?.RequestFit();
     }
