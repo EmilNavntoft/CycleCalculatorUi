@@ -9,3 +9,6 @@ obj/
 
 # OS-generated files
 .DS_Store
+
+# Linux publish output (publish-linux.sh)
+publish/

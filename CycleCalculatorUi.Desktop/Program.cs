@@ -24,6 +24,10 @@ internal static class Program
             .SetSize(1440, 900)
             .Center()
             .SetIconFile(Path.Combine(AppContext.BaseDirectory, "wwwroot", "favicon.png"));
+#if !DEBUG
+        // Photino logs every UI message to stdout; keep that for debug builds only.
+        app.MainWindow.SetLogVerbosity(0);
+#endif
 
         AppDomain.CurrentDomain.UnhandledException += (_, error) =>
             app.MainWindow.ShowMessage("Unexpected error", error.ExceptionObject.ToString());
