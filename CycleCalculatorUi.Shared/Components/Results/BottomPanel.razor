@@ -87,7 +87,7 @@
             {
                 if (!result.Success)
                 {
-                    <UnconvergedNotice Message="@result.Message" Reversed="result.HasReversedFlow"/>
+                    <UnconvergedNotice Result="result"/>
                 }
                 EnergySummary energy = EnergyBalance.Compute(State.Document, State.Catalog, result);
                 <dl class="energy-totals @(State.IsResultStale ? "stale" : "")" title="@EnergyTooltip(energy)">

@@ -24,9 +24,17 @@ public sealed class SolveResult
     /// <see cref="Message"/>.</summary>
     public IReadOnlyList<PortRef> ReversedFlows { get; init; } = [];
 
-    /// <summary>True when the calculation failed only because of <see cref="ReversedFlows"/>; the port values are
-    /// then a solved state rather than an unconverged iterate.</summary>
     public bool HasReversedFlow => ReversedFlows.Count > 0;
+
+    /// <summary>Nodes (expansion valves, ejectors) whose outlet pressure is above the inlet pressure. Like
+    /// <see cref="ReversedFlows"/>, the solver converged but the result counts as failed.</summary>
+    public IReadOnlyList<string> ReversedPressureNodes { get; init; } = [];
+
+    public bool HasReversedPressure => ReversedPressureNodes.Count > 0;
+
+    /// <summary>True when the solver converged, but to a state that is not a valid operating point (reversed flow
+    /// or pressure). The port values are then a solved state rather than an unconverged iterate.</summary>
+    public bool IsInvalidSolution => HasReversedFlow || HasReversedPressure;
 
     /// <summary>True when port values are available. A solve that did not converge still carries the solver's
     /// last iterate (with Success = false) so it can be inspected.</summary>
@@ -156,26 +164,22 @@ public sealed class SolveService
             return Failure(ex.Message);
         }
 
-        // Fall back to the backend's message if a reversed port is not part of the document.
-        List<(PortRef Port, double MassFlow)> reversed =
-            outcome.Failure is ReversedFlowException reversedFlow &&
-            ReversedPorts(snapshot, build, reversedFlow) is var found && found.Count == reversedFlow.Flows.Count
-                ? found
-                : [];
+        InvalidSolution? invalid = outcome.Failure is InvalidSolutionException failure
+            ? DescribeInvalidSolution(snapshot, build, failure)
+            : null;
         return new SolveResult
         {
             Success = outcome.Converged,
             Message = outcome.Converged
                 ? $"Solved in {stopwatch.Elapsed.TotalSeconds:0.00} s."
-                : reversed.Count > 0
-                    ? DescribeReversedFlows(snapshot, reversed)
-                    : outcome.ErrorMessage!,
-            ReversedFlows = reversed.Select(r => r.Port).ToList(),
+                : invalid?.Message ?? outcome.ErrorMessage!,
+            ReversedFlows = invalid?.ReversedFlows ?? [],
+            ReversedPressureNodes = invalid?.ReversedPressureNodes ?? [],
             Duration = stopwatch.Elapsed,
             Issues = build.Issues,
             Ports = ReadPorts(snapshot, build),
             Outputs = ReadOutputs(snapshot, build),
-            TemperatureProfiles = outcome.Converged || reversed.Count > 0 ? ReadTemperatureProfiles(snapshot, build) : [],
+            TemperatureProfiles = outcome.Converged || invalid is not null ? ReadTemperatureProfiles(snapshot, build) : [],
             Fingerprint = fingerprint,
             ResidualHistory = recorder.Finish()
         };
@@ -247,40 +251,62 @@ public sealed class SolveService
         return results;
     }
 
-    /// <summary>The document ports behind the backend ports of <paramref name="failure"/>, with their mass flow
-    /// in the design direction.</summary>
-    private List<(PortRef Port, double MassFlow)> ReversedPorts(SystemDocument document, BuildResult build,
-        ReversedFlowException failure)
+    private sealed record InvalidSolution(string Message, IReadOnlyList<PortRef> ReversedFlows,
+        IReadOnlyList<string> ReversedPressureNodes);
+
+    /// <summary>
+    /// Maps the ports of a reversed flow or pressure failure to the document and words the message with component and
+    /// port names as the editor shows them. Null (keep the backend's message) if a port is not part of the document.
+    /// </summary>
+    private InvalidSolution? DescribeInvalidSolution(SystemDocument document, BuildResult build,
+        InvalidSolutionException failure)
     {
         // Port does not override Equals, so this matches the very port objects.
-        Dictionary<Port, double> reversed = failure.Flows.ToDictionary(f => f.Port, f => f.MassFlow);
-        List<(PortRef, double)> ports = [];
+        Dictionary<Port, PortRef> refs = [];
         foreach (NodeModel node in document.Nodes)
         {
             ComponentDescriptor descriptor = _catalog.Get(node.TypeId);
             CycleComponent component = build.ComponentsByNode[node.Id];
             foreach (PortDescriptor port in descriptor.Ports.Where(p => p.Kind == PortKind.Fluid))
-            {
-                if (reversed.TryGetValue(descriptor.GetPort(component, port.Key), out double massFlow))
-                    ports.Add((new PortRef(node.Id, port.Key), massFlow));
-            }
+                refs[descriptor.GetPort(component, port.Key)] = new PortRef(node.Id, port.Key);
         }
 
-        return ports;
-    }
-
-    /// <summary>Lists the reversed flows with component and port names as the editor shows them.</summary>
-    private string DescribeReversedFlows(SystemDocument document, IReadOnlyList<(PortRef Port, double MassFlow)> flows)
-    {
-        const int maxListed = 6;
-        IEnumerable<string> listed = flows.Take(maxListed).Select(flow =>
+        string Label(Port port)
         {
-            NodeModel node = document.FindNode(flow.Port.NodeId)!;
-            string label = _catalog.Get(node.TypeId).FindPort(flow.Port.PortKey)?.Label ?? flow.Port.PortKey;
-            return $"{node.Name} · {label} ({flow.MassFlow.ToString("0.0000", CultureInfo.InvariantCulture)} kg/s)";
-        });
-        string more = flows.Count > maxListed ? $" and {flows.Count - maxListed} more" : "";
-        return $"Mass flow runs against the design direction at {string.Join(", ", listed)}{more}.";
+            PortRef reference = refs[port];
+            NodeModel node = document.FindNode(reference.NodeId)!;
+            return _catalog.Get(node.TypeId).FindPort(reference.PortKey)?.Label ?? reference.PortKey;
+        }
+
+        string Name(Port port) => $"{document.FindNode(refs[port].NodeId)!.Name} · {Label(port)}";
+
+        static string Number(double value) => value.ToString("0.0000", CultureInfo.InvariantCulture);
+
+        switch (failure)
+        {
+            case ReversedFlowException flow when flow.Flows.All(f => refs.ContainsKey(f.Port)):
+                return new InvalidSolution(
+                    "Mass flow runs against the design direction at " +
+                    List(flow.Flows.Select(f => $"{Name(f.Port)} ({Number(f.MassFlow)} kg/s)")) + ".",
+                    flow.Flows.Select(f => refs[f.Port]).ToList(), []);
+            case ReversedPressureException pressure when pressure.Drops.All(d =>
+                refs.ContainsKey(d.Drop.High) && refs.ContainsKey(d.Drop.Low)):
+                return new InvalidSolution(
+                    "Pressure rises where it must drop: " + List(pressure.Drops.Select(d =>
+                        $"{Name(d.Drop.High)} {Number(d.HighPressure)} bar is below " +
+                        $"{Label(d.Drop.Low).ToLowerInvariant()} {Number(d.LowPressure)} bar")) + ".",
+                    [], pressure.Drops.Select(d => refs[d.Drop.High].NodeId).Distinct().ToList());
+            default:
+                return null;
+        }
+
+        static string List(IEnumerable<string> items)
+        {
+            const int maxListed = 6;
+            List<string> all = items.ToList();
+            string more = all.Count > maxListed ? $" and {all.Count - maxListed} more" : "";
+            return string.Join(", ", all.Take(maxListed)) + more;
+        }
     }
 
     private Dictionary<string, IReadOnlyList<OutputValue>> ReadOutputs(SystemDocument document, BuildResult build)

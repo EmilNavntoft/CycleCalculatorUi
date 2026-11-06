@@ -337,6 +337,29 @@ public class SolveTests
         Assert.That(FlowDirection.Of(document, ComponentCatalog.Default, new PortRef(sink.Id, "Port"),
             result.Port(sink.Id, "Port")!).Reversed, Is.True);
     }
+
+    [Test]
+    public async Task ValveOutletAboveInlet_FailsWithSolvedStateAndNamesTheValve()
+    {
+        DocumentBuilder builder = new(ComponentCatalog.Default, "Pressure rise",
+            new FluidSelection(CoolPropFluids.CarbonDioxide, CoolPropBackends.HEOS));
+        NodeModel source = builder.Add("BoundaryCondition", "Source", 0, 0, ("massFlow", -1), ("pressure", 30), ("temperature", 20));
+        builder.Choice(source, "thermal", "temperature");
+        NodeModel valve = builder.Add("ExpansionValve", "EXV1", 200, 0, ("outletPressure", 45));
+        builder.Choice(valve, "mode", "fixed");
+        NodeModel sink = builder.Add("BoundaryCondition", "Sink", 400, 0);
+        builder.Connect(source, "Port", valve, "Inlet").Connect(valve, "Outlet", sink, "Port");
+        SystemDocument document = builder.Build();
+
+        SolveResult result = await _service.SolveAsync(document);
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.HasReversedPressure, Is.True);
+        Assert.That(result.IsInvalidSolution, Is.True);
+        Assert.That(result.ReversedPressureNodes, Is.EqualTo(new[] { valve.Id }));
+        Assert.That(result.Message, Does.Contain("EXV1 · Inlet 30.0000 bar is below outlet 45.0000 bar"));
+        Assert.That(result.Port(valve.Id, "Outlet")!.Pressure, Is.EqualTo(45).Within(1e-9));
+    }
 }
 
 [TestFixture]

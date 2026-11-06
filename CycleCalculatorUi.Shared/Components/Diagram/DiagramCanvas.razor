@@ -10,6 +10,7 @@
         .Where(i => i.NodeId is not null && i.PortKey is not null)
         .Select(i => (i.NodeId!, i.PortKey!)).ToHashSet();
     HashSet<PortRef> reversedPorts = result is null ? [] : result.ReversedFlows.ToHashSet();
+    HashSet<string> pressureRiseNodes = result is null ? [] : result.ReversedPressureNodes.ToHashSet();
 }
 
 <svg class="diagram" @ref="_svg" tabindex="0" aria-label="System diagram">
@@ -44,8 +45,9 @@
             ComponentDescriptor? descriptor = State.Catalog.Find(node.TypeId);
             bool selected = State.SelectedNodeIds.Contains(node.Id);
             bool hasError = State.IssuesFor(node.Id).Any(i => i.Severity == IssueSeverity.Error);
+            bool pressureRise = pressureRiseNodes.Contains(node.Id);
             <g @key="node.Id"
-               class="node @(selected ? "selected" : "") @(hasError ? "has-error" : "")"
+               class="node @(selected ? "selected" : "") @(hasError ? "has-error" : "") @(pressureRise ? stale ? "pressure-rise stale" : "pressure-rise" : "")"
                data-node-id="@node.Id"
                data-selected="@(selected ? "true" : "false")"
                data-x="@Geometry.F(node.X)" data-y="@Geometry.F(node.Y)"
@@ -80,7 +82,7 @@
 
         @if (ShowValues && result is { HasResults: true })
         {
-            <g class="values @(stale ? "stale" : "") @(result.Success || result.HasReversedFlow ? "" : "unconverged")">
+            <g class="values @(stale ? "stale" : "") @(result.Success || result.IsInvalidSolution ? "" : "unconverged")">
                 @foreach (ConnectionModel connection in State.Document.Connections.Where(c => c.Kind == ConnectionKind.Fluid))
                 {
                     if (State.Document.FindNode(connection.From.NodeId) is not { } node ||

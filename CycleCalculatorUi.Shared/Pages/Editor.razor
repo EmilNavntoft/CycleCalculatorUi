@@ -247,6 +247,7 @@
             ? $"{State.Issues.Count(i => i.Severity == IssueSeverity.Error)} problem(s)"
             : "",
         { Result.HasReversedFlow: true } => "Calculation failed: reversed flow",
+        { Result.HasReversedPressure: true } => "Calculation failed: pressure rises across a valve",
         { Result.Success: false } => "Calculation failed",
         { IsResultStale: true } => "Results out of date",
         _ => State.Result!.Message

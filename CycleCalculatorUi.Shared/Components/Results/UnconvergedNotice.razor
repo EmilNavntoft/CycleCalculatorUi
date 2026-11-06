@@ -1,23 +1,26 @@
-@* Shown above results from a failed solve: an unconverged iterate, or a solved state with reversed flow. *@
+@* Shown above results from a failed solve: an unconverged iterate, or a solved state that is not physical. *@
 <div class="unconverged-notice" role="alert">
-    @if (Reversed)
+    @if (Result.HasReversedFlow)
     {
         <strong>Calculation failed — mass flow runs against the design direction.</strong>
         <text>The solver found a solution, but fluid flows backwards through the ports below (red mass flows and
         connections). Check the pressures and boundary conditions, and that the components are connected in the
         intended flow direction.</text>
     }
+    else if (Result.HasReversedPressure)
+    {
+        <strong>Calculation failed — pressure rises across an expansion valve or ejector.</strong>
+        <text>The solver found a solution, but the outlet pressure of the components marked red in the diagram is
+        above their (motive) inlet pressure. Check the fixed pressures and setpoints around them.</text>
+    }
     else
     {
         <strong>Calculation failed — the solver did not converge.</strong>
         <text>The values below are its last iterate and do not satisfy the equations; use them for debugging only.</text>
     }
-    <div class="unconverged-message">@Message</div>
+    <div class="unconverged-message">@Result.Message</div>
 </div>
 
 @code {
-    [Parameter, EditorRequired] public string Message { get; set; } = "";
-
-    /// <summary>The solver converged, but to a state with reversed flow.</summary>
-    [Parameter] public bool Reversed { get; set; }
+    [Parameter, EditorRequired] public SolveResult Result { get; set; } = null!;
 }

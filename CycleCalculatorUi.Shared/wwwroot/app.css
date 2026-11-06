@@ -259,6 +259,9 @@ kbd {
 .node:hover .node-frame { stroke: var(--border-strong); }
 .node.selected .node-frame { fill: var(--accent-soft); stroke: var(--accent); fill-opacity: .5; }
 .node.has-error .node-frame { stroke: var(--danger); stroke-dasharray: 4 3; }
+/* Outlet above inlet pressure in the last calculation (expansion valve, ejector). */
+.node.pressure-rise .node-frame { stroke: var(--danger); stroke-width: 2.4; fill: var(--danger-soft); }
+.node.pressure-rise.stale .node-frame { opacity: .6; }
 .node-label { fill: var(--text); font-size: 12px; font-weight: 550; text-anchor: middle; pointer-events: none; }
 
 .port { fill: var(--surface); stroke: var(--symbol); stroke-width: 1.6; cursor: crosshair; }
