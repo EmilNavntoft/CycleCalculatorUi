@@ -246,6 +246,7 @@
         { Result: null } => State.Issues.Any(i => i.Severity == IssueSeverity.Error) && State.Document.Nodes.Count > 0
             ? $"{State.Issues.Count(i => i.Severity == IssueSeverity.Error)} problem(s)"
             : "",
+        { Result.HasReversedFlow: true } => "Calculation failed: reversed flow",
         { Result.Success: false } => "Calculation failed",
         { IsResultStale: true } => "Results out of date",
         _ => State.Result!.Message

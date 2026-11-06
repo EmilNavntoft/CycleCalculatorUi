@@ -277,6 +277,9 @@ kbd {
 .connection.fluid-Water .line { stroke: var(--fluid-water); }
 .connection.fluid-Air .line { stroke: var(--fluid-air); }
 .connection.conflict .line { stroke: var(--danger); stroke-dasharray: 6 4; }
+/* Flow against the design direction in the last calculation. */
+.connection.reversed .line { stroke: var(--danger); stroke-width: 3.2; }
+.connection.reversed.stale .line { opacity: .6; }
 .connection.signal .line { stroke: var(--signal); stroke-width: 1.4; stroke-dasharray: 5 4; }
 .connection:hover .line { stroke-width: 3.4; }
 .connection.selected .line { stroke-width: 4; filter: drop-shadow(0 0 3px var(--accent)); }

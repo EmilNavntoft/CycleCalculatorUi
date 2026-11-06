@@ -2,7 +2,7 @@
 @if (State.Result is { HasResults: true } result && result.Ports.TryGetValue(Node.Id, out var ports))
 {
     <section class="inspector-section results @(State.IsResultStale ? "stale" : "")">
-        <h3>Results @if (!result.Success) { <span class="badge error">not converged</span> } @if (State.IsResultStale) { <span class="badge">out of date</span> }</h3>
+        <h3>Results @if (result.HasReversedFlow) { <span class="badge error">reversed flow</span> } else if (!result.Success) { <span class="badge error">not converged</span> } @if (State.IsResultStale) { <span class="badge">out of date</span> }</h3>
         <table class="result-table">
             <thead>
             <tr><th>Port</th><th>ṁ<small>kg/s</small></th><th>p<small>bar</small></th><th>T<small>°C</small></th><th>h<small>kJ/kg</small></th></tr>

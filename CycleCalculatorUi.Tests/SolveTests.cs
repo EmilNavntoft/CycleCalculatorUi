@@ -311,6 +311,32 @@ public class SolveTests
 
     private static PortResult Port(SystemDocument document, SolveResult result, string node, string port) =>
         result.Port(NodeId(document, node), port) ?? throw new AssertionException($"No result for {node}.{port}");
+
+    [Test]
+    public async Task ReversedFlow_FailsWithSolvedStateAndNamesThePorts()
+    {
+        // The sink pressure is above the source pressure, so the water flows backwards through the pipe.
+        DocumentBuilder builder = new(ComponentCatalog.Default, "Reversed",
+            new FluidSelection(CoolPropFluids.Water, CoolPropBackends.HEOS));
+        NodeModel source = builder.Add("BoundaryCondition", "Source", 0, 0, ("pressure", 3), ("temperature", 20));
+        builder.Choice(source, "thermal", "temperature");
+        NodeModel pipe = builder.Add("Pipe", "Pipe1", 200, 0, ("nominalPressureDrop", 0.5), ("nominalMassFlow", 2));
+        NodeModel sink = builder.Add("BoundaryCondition", "Sink", 400, 0, ("pressure", 5));
+        builder.Connect(source, "Port", pipe, "Inlet").Connect(pipe, "Outlet", sink, "Port");
+        SystemDocument document = builder.Build();
+
+        SolveResult result = await _service.SolveAsync(document);
+
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.HasReversedFlow, Is.True);
+        Assert.That(result.ReversedFlows, Is.EquivalentTo(new[] { new PortRef(pipe.Id, "Inlet"), new PortRef(pipe.Id, "Outlet") }));
+        Assert.That(result.Message, Does.Contain("Pipe1 · Inlet").And.Contain("against the design direction"));
+        // The solved state is still shown, with the flow marked as reversed.
+        Assert.That(FlowDirection.Of(document, ComponentCatalog.Default, new PortRef(pipe.Id, "Inlet"),
+            result.Port(pipe.Id, "Inlet")!).Reversed, Is.True);
+        Assert.That(FlowDirection.Of(document, ComponentCatalog.Default, new PortRef(sink.Id, "Port"),
+            result.Port(sink.Id, "Port")!).Reversed, Is.True);
+    }
 }
 
 [TestFixture]

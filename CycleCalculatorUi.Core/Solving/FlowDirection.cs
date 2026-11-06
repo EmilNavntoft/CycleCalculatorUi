@@ -1,4 +1,5 @@
 using CycleCalculator.CycleModel.Model.Connectors;
+using CycleCalculator.CycleModel.Solver;
 using CycleCalculatorUi.Core.Building;
 using CycleCalculatorUi.Core.Catalog;
 using CycleCalculatorUi.Core.Document;
@@ -11,8 +12,8 @@ namespace CycleCalculatorUi.Core.Solving;
 /// </summary>
 public static class FlowDirection
 {
-    /// <summary>Flows smaller than this (kg/s) count as zero, not as reversed.</summary>
-    public const double Tolerance = 1e-9;
+    /// <summary>Flows smaller than this (kg/s) count as zero, not as reversed. Same as the solver's check.</summary>
+    public const double Tolerance = ReversedFlowException.Tolerance;
 
     /// <summary>
     /// +1 when positive backend mass flow at this port is the design direction (an inlet), -1 for an outlet,

@@ -9,6 +9,7 @@
     HashSet<(string, string)> issuePorts = State.Issues
         .Where(i => i.NodeId is not null && i.PortKey is not null)
         .Select(i => (i.NodeId!, i.PortKey!)).ToHashSet();
+    HashSet<PortRef> reversedPorts = result is null ? [] : result.ReversedFlows.ToHashSet();
 }
 
 <svg class="diagram" @ref="_svg" tabindex="0" aria-label="System diagram">
@@ -26,8 +27,9 @@
                 ? FluidCircuitResolver.CircuitOf(circuits, FluidCircuitResolver.StreamOf(State.Document, State.Catalog, connection.From) ?? new StreamRef("", 0))
                 : null;
             string fluidClass = circuit is null ? "" : conflicts.Contains(circuit) ? "conflict" : FluidClass(circuit.Fluid.Fluid);
+            bool reversed = reversedPorts.Contains(connection.From) || reversedPorts.Contains(connection.To);
             <g @key="connection.Id"
-               class="connection @(connection.Kind == ConnectionKind.Signal ? "signal" : "fluid") @fluidClass @(State.SelectedConnectionId == connection.Id ? "selected" : "")"
+               class="connection @(connection.Kind == ConnectionKind.Signal ? "signal" : "fluid") @fluidClass @(reversed ? stale ? "reversed stale" : "reversed" : "") @(State.SelectedConnectionId == connection.Id ? "selected" : "")"
                data-connection-id="@connection.Id"
                data-from="@($"{connection.From.NodeId}|{connection.From.PortKey}")"
                data-to="@($"{connection.To.NodeId}|{connection.To.PortKey}")"
@@ -78,7 +80,7 @@
 
         @if (ShowValues && result is { HasResults: true })
         {
-            <g class="values @(stale ? "stale" : "") @(result.Success ? "" : "unconverged")">
+            <g class="values @(stale ? "stale" : "") @(result.Success || result.HasReversedFlow ? "" : "unconverged")">
                 @foreach (ConnectionModel connection in State.Document.Connections.Where(c => c.Kind == ConnectionKind.Fluid))
                 {
                     if (State.Document.FindNode(connection.From.NodeId) is not { } node ||
