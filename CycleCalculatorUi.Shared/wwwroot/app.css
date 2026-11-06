@@ -152,16 +152,7 @@ kbd {
 }
 
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; margin-right: 4px; }
-.brand-mark {
-    display: grid;
-    place-items: center;
-    width: 26px;
-    height: 26px;
-    border-radius: 7px;
-    background: var(--accent);
-    color: #fff;
-    font-size: 14px;
-}
+.brand-mark { width: 26px; height: 26px; object-fit: contain; }
 
 .toolbar-group { display: flex; align-items: center; gap: 4px; padding-left: 12px; border-left: 1px solid var(--border); }
 .toolbar .examples { width: 190px; }
