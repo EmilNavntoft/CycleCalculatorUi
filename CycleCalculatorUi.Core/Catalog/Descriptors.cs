@@ -97,6 +97,9 @@ public sealed record ParameterDescriptor(string Key, string Label, ParameterKind
     /// </summary>
     public string? Group { get; init; }
 
+    /// <summary>Drawn indented under the parameter it depends on, e.g. the settings of a chosen signal control.</summary>
+    public bool Nested { get; init; }
+
     /// <summary>
     /// For grouped parameters: hides the parameter for single group items, given the node and the zero-based item
     /// index, e.g. an operating frequency only for the variable-speed compressors. Applies on top of <see cref="IsActive"/>.

@@ -155,12 +155,12 @@ public static class BuiltInComponents
                 .. SignalControlParameters(Controlled, Measurements.Pressure.Key),
                 new ParameterDescriptor("minMassFlow", "Min. mass flow", ParameterKind.Number)
                 {
-                    Unit = "kg/s", Optional = true, Min = 0, IsActive = Controlled,
+                    Unit = "kg/s", Optional = true, Min = 0, IsActive = Controlled, Nested = true,
                     Help = "Lower limit of the controlled mass flow. Leave empty for zero."
                 },
                 new ParameterDescriptor("maxMassFlow", "Max. mass flow", ParameterKind.Number)
                 {
-                    Unit = "kg/s", Optional = true, Min = 0, MinExclusive = true, IsActive = Controlled,
+                    Unit = "kg/s", Optional = true, Min = 0, MinExclusive = true, IsActive = Controlled, Nested = true,
                     Help = "Upper limit of the controlled mass flow, e.g. the compressor's full capacity. Leave empty for no limit."
                 },
                 ControlSignParameter(Controlled, "More capacity",
@@ -267,12 +267,12 @@ public static class BuiltInComponents
                 .. SignalControlParameters(Controlled, Measurements.MassFlow.Key, (Measurements.Temperature, 20)),
                 new ParameterDescriptor("minPosition", "Min. envelope position", ParameterKind.Number)
                 {
-                    Unit = "-", Optional = true, Min = 0, Max = 1, IsActive = Controlled,
+                    Unit = "-", Optional = true, Min = 0, Max = 1, IsActive = Controlled, Nested = true,
                     Help = "Lower limit of the controlled envelope position. Leave empty for the minimum curve."
                 },
                 new ParameterDescriptor("maxPosition", "Max. envelope position", ParameterKind.Number)
                 {
-                    Unit = "-", Optional = true, Min = 0, Max = 1, IsActive = Controlled,
+                    Unit = "-", Optional = true, Min = 0, Max = 1, IsActive = Controlled, Nested = true,
                     Help = "Upper limit of the controlled envelope position. Leave empty for the maximum curve."
                 },
                 ControlSignParameter(Controlled, "A higher envelope position",
@@ -368,11 +368,11 @@ public static class BuiltInComponents
                 .. SignalControlParameters(Controlled, Measurements.Superheat.Key),
                 new ParameterDescriptor("minOutletPressure", "Min. outlet pressure", ParameterKind.Number)
                 {
-                    Unit = "bar", Optional = true, Min = 0, MinExclusive = true, IsActive = Controlled
+                    Unit = "bar", Optional = true, Min = 0, MinExclusive = true, IsActive = Controlled, Nested = true
                 },
                 new ParameterDescriptor("maxOutletPressure", "Max. outlet pressure", ParameterKind.Number)
                 {
-                    Unit = "bar", Optional = true, Min = 0, MinExclusive = true, IsActive = Controlled
+                    Unit = "bar", Optional = true, Min = 0, MinExclusive = true, IsActive = Controlled, Nested = true
                 },
                 ControlSignParameter(Controlled, "A higher outlet pressure",
                     "E.g. a mass flow measured through the valve falls with a higher outlet pressure.")
@@ -529,15 +529,6 @@ public static class BuiltInComponents
                     Unit = "°C", DefaultNumber = 40, Min = -273.15, MinExclusive = true,
                     IsActive = node => !DischargeIsPressure(node)
                 },
-                new ParameterDescriptor("dischargeVariable", "Polynomial discharge variable (D)", ParameterKind.Choice)
-                {
-                    DefaultChoice = nameof(En12900DischargeVariable.Pressure),
-                    Options =
-                    [
-                        new ChoiceOption(nameof(En12900DischargeVariable.Pressure), "Discharge pressure (bar abs.)"),
-                        new ChoiceOption(nameof(En12900DischargeVariable.SaturationTemperature), "Discharge saturation temperature (°C)")
-                    ]
-                },
                 new ParameterDescriptor("capacityControl", "Capacity control", ParameterKind.Choice)
                 {
                     DefaultChoice = "none",
@@ -550,14 +541,23 @@ public static class BuiltInComponents
                 .. SignalControlParameters(Controlled, Measurements.Pressure.Key),
                 new ParameterDescriptor("minFrequency", "Min. frequency", ParameterKind.Number)
                 {
-                    Unit = "Hz", DefaultNumber = 25, Min = 0, MinExclusive = true, IsActive = Controlled
+                    Unit = "Hz", DefaultNumber = 25, Min = 0, MinExclusive = true, IsActive = Controlled, Nested = true
                 },
                 new ParameterDescriptor("maxFrequency", "Max. frequency", ParameterKind.Number)
                 {
-                    Unit = "Hz", DefaultNumber = 70, Min = 0, MinExclusive = true, IsActive = Controlled
+                    Unit = "Hz", DefaultNumber = 70, Min = 0, MinExclusive = true, IsActive = Controlled, Nested = true
                 },
                 ControlSignParameter(Controlled, "More capacity",
                     "E.g. a suction-side pressure falls with more capacity, a discharge-side pressure rises."),
+                new ParameterDescriptor("dischargeVariable", "Polynomial discharge variable (D)", ParameterKind.Choice)
+                {
+                    DefaultChoice = nameof(En12900DischargeVariable.Pressure),
+                    Options =
+                    [
+                        new ChoiceOption(nameof(En12900DischargeVariable.Pressure), "Discharge pressure (bar abs.)"),
+                        new ChoiceOption(nameof(En12900DischargeVariable.SaturationTemperature), "Discharge saturation temperature (°C)")
+                    ]
+                },
                 new ParameterDescriptor("nominalSuperheat", "Nominal suction superheat", ParameterKind.Number)
                 {
                     Unit = "K", DefaultNumber = 10, Min = 0,
@@ -726,7 +726,7 @@ public static class BuiltInComponents
                     (Measurements.Temperature, 30), (Measurements.MassFlow, 0.5)),
                 new ParameterDescriptor("minimumOpening", "Minimum opening", ParameterKind.Number)
                 {
-                    Unit = "-", Optional = true, Min = 0, Max = 0.5, IsActive = Controlled,
+                    Unit = "-", Optional = true, Min = 0, Max = 0.5, IsActive = Controlled, Nested = true,
                     Help = "Keeps both outlets at least this open."
                 },
                 ControlSignParameter(Controlled, "More opening to outlet 1",
@@ -813,11 +813,11 @@ public static class BuiltInComponents
                 .. SignalControlParameters(Controlled, Measurements.Temperature.Key, (Measurements.Temperature, 120)),
                 new ParameterDescriptor("minEfficiency", "Min. effectiveness", ParameterKind.Number)
                 {
-                    Unit = "-", Optional = true, Min = 0, Max = 1, IsActive = Controlled
+                    Unit = "-", Optional = true, Min = 0, Max = 1, IsActive = Controlled, Nested = true
                 },
                 new ParameterDescriptor("maxEfficiency", "Max. effectiveness", ParameterKind.Number)
                 {
-                    Unit = "-", Optional = true, Min = 0, Max = 1, IsActive = Controlled
+                    Unit = "-", Optional = true, Min = 0, Max = 1, IsActive = Controlled, Nested = true
                 },
                 ControlSignParameter(Controlled, "A higher effectiveness",
                     "E.g. the hot stream's outlet temperature falls with a higher effectiveness."),
@@ -992,6 +992,7 @@ public static class BuiltInComponents
                     .AvailableFor(node, SelectedQuantity(node, defaultSignal).Key, document, catalog)
                     .Select(Option).ToArray(),
                 IsActive = controlled,
+                Nested = true,
                 Help = "What the signal input measures: a state of the connected port, or a value the connected " +
                        "component provides, e.g. a pump's envelope position."
             },
@@ -1003,6 +1004,7 @@ public static class BuiltInComponents
                     .FirstOrDefault() ?? quantity.DefaultSetpoint,
                 Min = quantity.Min, Max = quantity.Max, MinExclusive = quantity.MinExclusive,
                 IsActive = node => controlled(node) && SelectedQuantity(node, defaultSignal) == quantity,
+                Nested = true,
                 Help = quantity.Help + " If it cannot be reached, the controlled variable stays at its limit."
             })
         ];
@@ -1021,6 +1023,7 @@ public static class BuiltInComponents
                 new ChoiceOption("negative", $"{increase} lowers the measured value (−1)")
             ],
             IsActive = controlled,
+            Nested = true,
             Help = example + " Automatic lets the solver determine it from the initial guess."
         };
 

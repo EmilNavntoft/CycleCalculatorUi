@@ -38,8 +38,16 @@
                 {
                     if (parameter.Group is not { } groupKey || descriptor.FindGroup(groupKey) is not { } group)
                     {
-                        <ParameterField State="State" Node="node" Instance="new ParameterInstance(parameter, parameter.Key, null, 0)"
-                                        Error="@ErrorFor(issues, parameter.Key, node)"/>
+                        RenderFragment field = @<ParameterField State="State" Node="node" Instance="new ParameterInstance(parameter, parameter.Key, null, 0)"
+                                                                Error="@ErrorFor(issues, parameter.Key, node)"/>;
+                        if (parameter.Nested)
+                        {
+                            <div class="nested-param">@field</div>
+                        }
+                        else
+                        {
+                            @field
+                        }
                         continue;
                     }
 
