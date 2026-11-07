@@ -484,6 +484,31 @@ public sealed class EditorState(ComponentCatalog catalog, SolveService solver)
         }
     }
 
+    /// <summary>Shows the solver's estimated start values as the result, without solving (debugging aid).</summary>
+    public async Task EstimateStartAsync()
+    {
+        if (IsSolving)
+            return;
+        IsSolving = true;
+        _liveResidualHistory = [];
+        _solveCancellation = new CancellationTokenSource();
+        Notify();
+        try
+        {
+            Result = await solver.EstimateStartAsync(Document, _solveCancellation.Token);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            IsSolving = false;
+            _solveCancellation.Dispose();
+            _solveCancellation = null;
+            Notify();
+        }
+    }
+
     public void CancelSolve() => _solveCancellation?.Cancel();
 
     /// <summary>Energy totals of the latest successful calculation.</summary>

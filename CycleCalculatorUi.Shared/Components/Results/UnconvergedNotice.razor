@@ -1,6 +1,12 @@
 @* Shown above results from a failed solve: an unconverged iterate, or a solved state that is not physical. *@
 <div class="unconverged-notice" role="alert">
-    @if (Result.HasReversedFlow)
+    @if (Result.IsStartGuess)
+    {
+        <strong>Start guesses — not solved.</strong>
+        <text>These are the solver's estimated start values, before any iteration. Use them to debug start guesses;
+        press Calculate to solve.</text>
+    }
+    else if (Result.HasReversedFlow)
     {
         <strong>Calculation failed — mass flow runs against the design direction.</strong>
         <text>The solver found a solution, but fluid flows backwards through the ports below (red mass flows and
@@ -19,6 +25,10 @@
         <text>The values below are its last iterate and do not satisfy the equations; use them for debugging only.</text>
     }
     <div class="unconverged-message">@Result.Message</div>
+    @foreach (string warning in Result.Warnings)
+    {
+        <div class="unconverged-message">@warning</div>
+    }
 </div>
 
 @code {

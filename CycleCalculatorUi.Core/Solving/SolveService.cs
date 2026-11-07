@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using System.Globalization;
+using CycleCalculator.CycleModel.Conversion;
 using CycleCalculator.CycleModel.Model;
 using CycleCalculator.CycleModel.Model.BaseComponents;
 using CycleCalculator.CycleModel.Model.Connectors;
@@ -39,6 +40,13 @@ public sealed class SolveResult
     /// <summary>True when port values are available. A solve that did not converge still carries the solver's
     /// last iterate (with Success = false) so it can be inspected.</summary>
     public bool HasResults => Ports.Count > 0;
+
+    /// <summary>True when the port values are the solver's estimated start values rather than a solve (debugging
+    /// aid, see <see cref="SolveService.EstimateStartAsync"/>). <see cref="Success"/> is then false.</summary>
+    public bool IsStartGuess { get; init; }
+
+    /// <summary>Warnings from estimating the start values.</summary>
+    public IReadOnlyList<string> Warnings { get; init; } = [];
 
     public required string Message { get; init; }
 
@@ -193,6 +201,99 @@ public sealed class SolveService
             Duration = stopwatch.Elapsed,
             ResidualHistory = recorder.Finish()
         };
+    }
+
+    /// <summary>
+    /// Builds the document and runs only the solver's start value estimate
+    /// (<see cref="Orchestrator.EstimateStartValues"/>), returning those values as port results so they can be
+    /// inspected like a solve. For debugging start guesses.
+    /// </summary>
+    public async Task<SolveResult> EstimateStartAsync(SystemDocument document, CancellationToken cancellationToken = default)
+    {
+        SystemDocument snapshot = DocumentSerializer.Clone(document);
+        string fingerprint = DocumentSerializer.Fingerprint(snapshot);
+        Stopwatch stopwatch = Stopwatch.StartNew();
+
+        BuildResult build = _builder.Build(snapshot);
+        if (!build.Success)
+        {
+            return new SolveResult
+            {
+                Success = false,
+                IsStartGuess = true,
+                Message = build.Issues.FirstOrDefault(i => i.Severity == IssueSeverity.Error)?.Message
+                          ?? "The system could not be built.",
+                Issues = build.Issues,
+                Fingerprint = fingerprint,
+                Duration = stopwatch.Elapsed
+            };
+        }
+
+        StartGuessResult estimate;
+        await _slots.WaitAsync(cancellationToken);
+        try
+        {
+            estimate = await Task.Run(() =>
+            {
+                StartGuessResult result = Orchestrator.EstimateStartValues(build.Components);
+                ApplyStartValues(build.Components, result.Values);
+                return result;
+            }, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return new SolveResult
+            {
+                Success = false,
+                IsStartGuess = true,
+                Message = $"Estimating start values failed: {ex.Message}",
+                Issues = build.Issues,
+                Fingerprint = fingerprint,
+                Duration = stopwatch.Elapsed
+            };
+        }
+        finally
+        {
+            _slots.Release();
+        }
+
+        return new SolveResult
+        {
+            Success = false,
+            IsStartGuess = true,
+            Message = estimate.Warnings.Count == 0
+                ? "Estimated start values (not solved)."
+                : $"Estimated start values (not solved), {estimate.Warnings.Count} warning(s).",
+            Warnings = estimate.Warnings,
+            Duration = stopwatch.Elapsed,
+            Issues = build.Issues,
+            // Component outputs are left out: they are only set once a solution is applied.
+            Ports = ReadPorts(snapshot, build),
+            Fingerprint = fingerprint
+        };
+    }
+
+    /// <summary>Writes estimated values to the ports; a state the fluid rejects gets a NaN temperature.</summary>
+    private static void ApplyStartValues(IEnumerable<CycleComponent> components, double[] values)
+    {
+        foreach (CycleComponent component in components)
+        {
+            foreach (Port port in component.Ports)
+            {
+                port.MassFlow = values[port.MassFlowIdentifier];
+                port.Pressure = values[port.PressureIdentifier];
+                port.Enthalpy = values[port.EnthalpyIdentifier];
+                try
+                {
+                    port.Temperature = port.Fluid.Get(UnitType.Temperature,
+                        UnitType.Enthalpy, port.Enthalpy, UnitType.Pressure, port.Pressure);
+                }
+                catch (Exception)
+                {
+                    port.Temperature = double.NaN;
+                }
+            }
+        }
     }
 
     /// <summary>Collects the solver's iterations and forwards them to the caller at a limited rate.</summary>

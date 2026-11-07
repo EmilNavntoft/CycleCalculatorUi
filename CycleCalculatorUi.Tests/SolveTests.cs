@@ -30,6 +30,20 @@ public class SolveTests
     }
 
     [Test]
+    public async Task EstimateStart_ReturnsStartValuesAsUnsolvedResult()
+    {
+        SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
+        SolveResult result = await _service.EstimateStartAsync(document);
+
+        Assert.That(result.IsStartGuess, Is.True);
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.HasResults, Is.True, result.Message);
+        // Fixed pressures are linear equations, so the estimate already satisfies them.
+        Assert.That(Port(document, result, "Comp1", "Inlet").Pressure, Is.EqualTo(45).Within(1e-6));
+        Assert.That(result.ResidualHistory, Is.Empty);
+    }
+
+    [Test]
     public async Task EjectorExample_HeatExchangersReportTemperatureProfiles()
     {
         SystemDocument document = ExampleSystems.EjectorHeatPump();

@@ -78,6 +78,10 @@
         }
         else
         {
+            <button type="button" class="secondary" disabled="@(State.Document.Nodes.Count == 0)" @onclick="EstimateStartAsync"
+                    title="Debug: show the solver's estimated start values without solving">
+                Start guesses
+            </button>
             <button type="button" class="primary" disabled="@(State.Document.Nodes.Count == 0)" @onclick="CalculateAsync">
                 <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.5v9l7-4.5z"/></svg>
                 Calculate
@@ -246,6 +250,8 @@
         { Result: null } => State.Issues.Any(i => i.Severity == IssueSeverity.Error) && State.Document.Nodes.Count > 0
             ? $"{State.Issues.Count(i => i.Severity == IssueSeverity.Error)} problem(s)"
             : "",
+        { Result.IsStartGuess: true, Result.HasResults: true } => State.IsResultStale ? "Start guesses out of date" : "Showing start guesses",
+        { Result.IsStartGuess: true } => "Start guess estimate failed",
         { Result.HasReversedFlow: true } => "Calculation failed: reversed flow",
         { Result.HasReversedPressure: true } => "Calculation failed: pressure rises across a valve",
         { Result.Success: false } => "Calculation failed",
@@ -257,6 +263,7 @@
     {
         { IsSolving: true } => "busy",
         { Result: null } => State.Document.Nodes.Count > 0 && State.Issues.Any(i => i.Severity == IssueSeverity.Error) ? "warn" : "",
+        { Result.IsStartGuess: true, Result.HasResults: true } => "warn",
         { Result.Success: false } => "error",
         { IsResultStale: true } => "warn",
         _ => "ok"
@@ -266,6 +273,14 @@
     {
         await State.SolveAsync();
         if (State.Result is { Success: false } failed && failed.Issues.Count == 0)
+            ShowMessage(failed.Message);
+        _bottom?.Show(results: State.Result is { HasResults: true });
+    }
+
+    private async Task EstimateStartAsync()
+    {
+        await State.EstimateStartAsync();
+        if (State.Result is { HasResults: false } failed && failed.Issues.Count == 0)
             ShowMessage(failed.Message);
         _bottom?.Show(results: State.Result is { HasResults: true });
     }
