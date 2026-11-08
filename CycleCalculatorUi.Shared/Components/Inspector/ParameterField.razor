@@ -14,6 +14,10 @@
                 <option value="@option.Value">@option.Label</option>
             }
         </select>
+        @if (Error is not null)
+        {
+            <div class="field-message @(IsWarning ? "warning" : "")">@Error</div>
+        }
         @if (parameter.Help is not null)
         {
             <div class="field-help">@parameter.Help</div>
@@ -56,6 +60,9 @@ else
 
     /// <summary>Validation message for this value, without the component name in front.</summary>
     [Parameter] public string? Error { get; set; }
+
+    /// <summary>True when <see cref="Error"/> is only a warning (shown for choices, which cannot be invalid).</summary>
+    [Parameter] public bool IsWarning { get; set; }
 
     private bool InStudy =>
         State.Document.Study?.Variables.Any(v => v.NodeId == Node.Id && v.ParameterKey == Instance.Key) == true;

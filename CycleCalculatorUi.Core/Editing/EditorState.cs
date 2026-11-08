@@ -28,6 +28,7 @@ public sealed class EditorState(ComponentCatalog catalog, SolveService solver)
     private int _cachedRevision = -1;
     private string _fingerprint = "";
     private IReadOnlyList<ValidationIssue> _issues = [];
+    private int _cachedLibraryVersion = -1;
     private IReadOnlyList<FluidCircuit> _circuits = [];
 
     public ComponentCatalog Catalog { get; } = catalog;
@@ -132,8 +133,10 @@ public sealed class EditorState(ComponentCatalog catalog, SolveService solver)
 
     private void Refresh()
     {
-        if (_cachedRevision == _revision)
+        // The compressor library can change on disk, which changes the warnings but not the document.
+        if (_cachedRevision == _revision && _cachedLibraryVersion == Catalog.Library.Version)
             return;
+        _cachedLibraryVersion = Catalog.Library.Version;
         _issues = _builder.Validate(Document);
         _circuits = FluidCircuitResolver.Resolve(Document, Catalog);
         _fingerprint = DocumentSerializer.Fingerprint(Document);
@@ -356,7 +359,11 @@ public sealed class EditorState(ComponentCatalog catalog, SolveService solver)
         EditNode(nodeId, node => node.Arrays[key] = values);
 
     public void SetChoice(string nodeId, string key, string value) =>
-        EditNode(nodeId, node => node.Choices[key] = value);
+        EditNode(nodeId, node =>
+        {
+            node.Choices[key] = value;
+            Catalog.Find(node.TypeId)?.FindParameter(key)?.OnChosen?.Invoke(node, key, value);
+        });
 
     /// <summary>Adds an item to a repeated parameter group, starting as a copy of the last item.</summary>
     public void AddGroupItem(string nodeId, string groupKey)

@@ -352,6 +352,7 @@ kbd {
 .input-with-unit .unit { position: absolute; right: 8px; top: 6px; color: var(--muted); font-size: 12px; pointer-events: none; }
 .field.invalid input { border-color: var(--danger); }
 .field-message { margin-top: 3px; color: var(--danger); font-size: 12px; }
+.field-message.warning { color: var(--warn); }
 .field-help { margin-top: 3px; color: var(--muted); font-size: 11.5px; }
 
 .issue-list, .problem-list { margin: 10px 0 0; padding: 0; list-style: none; }

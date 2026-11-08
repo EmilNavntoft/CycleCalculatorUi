@@ -15,12 +15,12 @@ namespace CycleCalculatorUi.Core.Catalog;
 /// </summary>
 public static class BuiltInComponents
 {
-    public static IEnumerable<ComponentDescriptor> All() =>
+    public static IEnumerable<ComponentDescriptor> All(CompressorLibrary? library = null) =>
     [
         BoundaryCondition(),
         TemperatureBoundary(),
         SimpleCompressor(),
-        En12900Compressor(),
+        En12900Compressor(library ?? CompressorLibrary.Empty),
         Pump(),
         ExpansionValve(),
         ThreeWayValve(),
@@ -599,7 +599,7 @@ public static class BuiltInComponents
         };
     }
 
-    public static ComponentDescriptor En12900Compressor()
+    public static ComponentDescriptor En12900Compressor(CompressorLibrary library)
     {
         static bool DischargeIsPressure(NodeModel node) => ChoiceIs(node, "dischargeCondition", "pressure");
         static bool Controlled(NodeModel node) => ChoiceIs(node, "capacityControl", "signal");
@@ -632,6 +632,7 @@ public static class BuiltInComponents
                            "Only variable-speed compressors can run away from their nominal frequency."
                 }
             ],
+            Check = node => En12900Library.Check(node, library),
             Parameters =
             [
                 new ParameterDescriptor("dischargeCondition", "Discharge condition", ParameterKind.Choice)
@@ -686,6 +687,7 @@ public static class BuiltInComponents
                     Unit = "K", DefaultNumber = 10, Min = 0,
                     Help = "Suction superheat at which the polynomials were measured."
                 },
+                En12900Library.ModelParameter(library, Group),
                 new ParameterDescriptor("nominalFrequency", "Nominal frequency", ParameterKind.Number)
                 {
                     Group = Group, Unit = "Hz", DefaultNumber = En12900Polynomial.DefaultNominalFrequency,

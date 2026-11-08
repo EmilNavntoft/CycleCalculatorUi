@@ -128,6 +128,12 @@ public sealed record ParameterDescriptor(string Key, string Label, ParameterKind
     /// </summary>
     public Func<NodeModel, int, bool>? IsActiveForItem { get; init; }
 
+    /// <summary>
+    /// For choices: further changes to the node when a value is chosen in the editor, given the storage key and the
+    /// new value, e.g. copying a library compressor's polynomials. Runs inside the same undoable edit.
+    /// </summary>
+    public Action<NodeModel, string, string>? OnChosen { get; init; }
+
     public bool Active(NodeModel node) => IsActive?.Invoke(node) ?? true;
 
     /// <summary>Whether the parameter is active for the group item at zero-based <paramref name="index"/>.</summary>
@@ -262,6 +268,9 @@ public sealed class ComponentDescriptor
     public Func<CycleComponent, TemperatureProfile>? ReadTemperatureProfile { get; init; }
 
     public EnergyKind EnergyKind { get; init; } = EnergyKind.None;
+
+    /// <summary>Extra checks of a node beyond the parameter ranges, run on every validation.</summary>
+    public Func<NodeModel, IEnumerable<Building.ValidationIssue>>? Check { get; init; }
 
     /// <summary>
     /// Finds a port by key. Keys of repeated ports ("In#2") resolve to that item even when a node has fewer items;

@@ -9,13 +9,20 @@ public sealed class ComponentCatalog
 {
     private readonly Dictionary<string, ComponentDescriptor> _descriptors;
 
-    public ComponentCatalog(IEnumerable<ComponentDescriptor> descriptors)
+    public ComponentCatalog(IEnumerable<ComponentDescriptor> descriptors, CompressorLibrary? library = null)
     {
         _descriptors = descriptors.ToDictionary(descriptor => descriptor.TypeId);
+        Library = library ?? CompressorLibrary.Empty;
     }
 
-    /// <summary>The catalog with all built-in component types.</summary>
+    /// <summary>The catalog with all built-in component types and an empty compressor library.</summary>
     public static ComponentCatalog Default { get; } = new(BuiltInComponents.All());
+
+    /// <summary>The built-in component types, with EN 12900 compressors offering the models of <paramref name="library"/>.</summary>
+    public static ComponentCatalog WithLibrary(CompressorLibrary library) => new(BuiltInComponents.All(library), library);
+
+    /// <summary>Compressor models the EN 12900 compressor can pick from.</summary>
+    public CompressorLibrary Library { get; }
 
     public IReadOnlyCollection<ComponentDescriptor> All => _descriptors.Values;
 

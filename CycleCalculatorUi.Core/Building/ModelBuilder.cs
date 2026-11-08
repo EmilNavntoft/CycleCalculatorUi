@@ -64,6 +64,8 @@ public sealed class ModelBuilder(ComponentCatalog catalog)
                 issues.Add(new ValidationIssue(IssueSeverity.Error, "The component needs a name.", node.Id));
 
             ValidateParameters(node, descriptor, issues);
+            if (descriptor.Check is { } check)
+                issues.AddRange(check(node));
 
             for (int i = 0; i < node.Guesses.Count; i++)
             {

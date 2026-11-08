@@ -8,7 +8,8 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 // Editor services shared with the desktop host.
-builder.Services.AddCycleEditor();
+// The EN 12900 compressor library folder can be set with "CompressorLibrary:Directory" (appsettings or environment).
+builder.Services.AddCycleEditor(compressorLibraryDirectory: builder.Configuration["CompressorLibrary:Directory"]);
 
 var app = builder.Build();
 

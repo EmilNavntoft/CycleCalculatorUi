@@ -39,7 +39,8 @@
                     if (parameter.Group is not { } groupKey || descriptor.FindGroup(groupKey) is not { } group)
                     {
                         RenderFragment field = @<ParameterField State="State" Node="node" Instance="new ParameterInstance(parameter, parameter.Key, null, 0)"
-                                                                Error="@ErrorFor(issues, parameter.Key, node)"/>;
+                                                                Error="@ErrorFor(issues, parameter.Key, node)"
+                                                                IsWarning="IsWarning(issues, parameter.Key)"/>;
                         if (parameter.Nested)
                         {
                             <div class="nested-param">@field</div>
@@ -74,7 +75,8 @@
                                 {
                                     string key = RepeatGroupDescriptor.ItemKey(member.Key, index);
                                     <ParameterField State="State" Node="node" Instance="new ParameterInstance(member, key, group, index)"
-                                                    Error="@ErrorFor(issues, key, node)"/>
+                                                    Error="@ErrorFor(issues, key, node)"
+                                                    IsWarning="IsWarning(issues, key)"/>
                                 }
                             </fieldset>
                         }
@@ -212,6 +214,9 @@
 
     private static string? ErrorFor(IReadOnlyList<ValidationIssue> issues, string key, NodeModel node) =>
         StripName(issues.FirstOrDefault(i => i.ParameterKey == key)?.Message, node);
+
+    private static bool IsWarning(IReadOnlyList<ValidationIssue> issues, string key) =>
+        issues.FirstOrDefault(i => i.ParameterKey == key)?.Severity == IssueSeverity.Warning;
 
     /// <summary>Field messages sit under the field, so the "Name: " prefix is redundant there.</summary>
     private static string? StripName(string? message, NodeModel node) =>
