@@ -91,8 +91,8 @@ public static class ExampleSystems
     /// </summary>
     public static SystemDocument EjectorHeatPump()
     {
-        FluidSelection co2 = new(CoolPropFluids.CarbonDioxide, CoolPropBackends.TTSEANDHEOS);
-        FluidSelection water = new(CoolPropFluids.Water, CoolPropBackends.TTSEANDHEOS);
+        FluidSelection co2 = new(CoolPropFluids.CarbonDioxide, CoolPropBackends.HEOS);
+        FluidSelection water = new(CoolPropFluids.Water, CoolPropBackends.HEOS);
         DocumentBuilder b = new(ComponentCatalog.Default, "CO₂ heat pump with ejector", co2);
         NodeModel comp = b.Add("En12900Compressor", "Comp1", 80, 80);
         NodeModel ejector = b.Add("FixedEfficiencyEjector", "Ejector", 704, 80, ("isentropicEfficiency", 0.3));

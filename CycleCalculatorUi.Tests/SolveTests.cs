@@ -383,7 +383,7 @@ public class EjectorExampleTests
     public async Task EjectorHeatPump_SolvesWithSignalConnectionsAndTwoFluids()
     {
         SystemDocument document = ExampleSystems.EjectorHeatPump();
-        Assert.That(new CycleCalculatorUi.Core.Building.ModelBuilder(ComponentCatalog.Default).Validate(document), Is.Empty);
+        Assert.That(new ModelBuilder(ComponentCatalog.Default).Validate(document), Is.Empty);
 
         SolveResult result = await new SolveService(ComponentCatalog.Default).SolveAsync(document);
 
