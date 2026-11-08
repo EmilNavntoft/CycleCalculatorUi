@@ -32,14 +32,17 @@ public static class En12900Library
         new(ModelKey, "Model", ParameterKind.Choice)
         {
             Group = Group,
-            DefaultChoice = CompressorLibrary.ExampleModelName,
-            DefaultText = CompressorLibrary.Write(CompressorLibrary.ExampleModel),
-            Options = [new ChoiceOption(CompressorLibrary.ExampleModelName, CompressorLibrary.ExampleModelName)],
+            DefaultChoice = "",
             OptionsFor = (node, key, _, _) =>
             {
                 List<ChoiceOption> options = library.Models.Select(model => new ChoiceOption(model.Name, model.Name)).ToList();
-                if (node.Choices.GetValueOrDefault(key) is { Length: > 0 } stored && library.Find(stored) is null)
-                    options.Add(new ChoiceOption(stored, $"{stored} (not in library)"));
+                if (node.Choices.GetValueOrDefault(key) is { Length: > 0 } stored)
+                {
+                    if (library.Find(stored) is null)
+                        options.Add(new ChoiceOption(stored, $"{stored} (not in library)"));
+                }
+                else
+                    options.Insert(0, new ChoiceOption("", library.Models.Count == 0 ? "No models in the library" : "Choose a model…"));
                 return options;
             },
             OnChosen = (node, key, value) =>
@@ -213,7 +216,7 @@ public static class En12900Library
     public static IEnumerable<ValidationIssue> Check(NodeModel node, CompressorLibrary library)
     {
         List<ValidationIssue> issues = [];
-        bool anyLibraryModel = false;
+        bool showLibraryProblems = false;
         double net = NetFrequency(node);
         En12900DischargeVariable? discharge = null;
         bool? current = null;
@@ -226,6 +229,7 @@ public static class En12900Library
 
             if (Embedded(node, index) is not { } model)
             {
+                showLibraryProblems = true;
                 Add(IssueSeverity.Error, node.Texts.ContainsKey(key)
                     ? "the stored compressor data cannot be read; choose the model again."
                     : "choose a compressor model.");
@@ -250,21 +254,17 @@ public static class En12900Library
                 !SameFluid(refrigerant, fluid))
                 Add(IssueSeverity.Warning, $"{model.Name} is for {refrigerant}, but the component uses {FluidOptions.FluidLabel(fluid)}.");
 
-            if (model.Name == CompressorLibrary.ExampleModelName)
-                continue;
+            // A model that is not in the library (e.g. in an example or an older file) just uses its stored data.
             if (library.Find(model.Name) is not { } libraryModel)
-            {
-                Add(IssueSeverity.Warning, $"the model '{model.Name}' is not in the compressor library; its stored data is used.");
                 continue;
-            }
 
-            anyLibraryModel = true;
+            showLibraryProblems = true;
             if (CompressorLibrary.Write(libraryModel) != node.Texts[key])
                 Add(IssueSeverity.Warning, $"the stored data differs from library model {model.Name} (the library file " +
                                            "changed). Use \"Reload from library\" to update it.");
         }
 
-        if (anyLibraryModel)
+        if (showLibraryProblems)
         {
             foreach (string problem in library.Problems)
                 issues.Add(new ValidationIssue(IssueSeverity.Warning, $"{node.Name}: compressor library: {problem}", node.Id));

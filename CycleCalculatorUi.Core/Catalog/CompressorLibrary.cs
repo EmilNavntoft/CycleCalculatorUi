@@ -113,56 +113,23 @@ public sealed record CompressorModel
 /// <summary>
 /// EN 12900 compressor models read from the <c>.json</c> files in a folder. The folder is watched, so files added,
 /// changed or removed show up without a restart. Thread-safe: one instance is shared by all editor sessions.
-/// The <see cref="ExampleModel"/> is always listed first.
+/// The program ships its collection in <see cref="ShippedDirectory"/>.
 /// </summary>
 public sealed class CompressorLibrary : IDisposable
 {
     public const string ReadmeFileName = "README.txt";
 
-    public const string ExampleModelName = "Example CO₂ compressor";
-
-    /// <summary>
-    /// Built-in model used by new compressors and the examples, so they solve without a library folder: one polynomial
-    /// set measured at 50 Hz that scales linearly, for any net frequency.
-    /// </summary>
-    public static CompressorModel ExampleModel { get; } = new()
-    {
-        Name = ExampleModelName,
-        File = "(built in)",
-        DischargeVariable = En12900DischargeVariable.Pressure,
-        NominalSuperheat = 10,
-        MassFlowUnit = En12900MassFlowUnit.KilogramsPerHour,
-        PowerUnit = En12900PowerUnit.Watts,
-        Variants = [ExampleVariant(CompressorSpeed.Fixed), ExampleVariant(CompressorSpeed.Variable)]
-    };
-
-    private static CompressorVariant ExampleVariant(CompressorSpeed speed) => new()
-    {
-        Speed = speed,
-        Scaling = En12900FrequencyScaling.Linear,
-        Points =
-        [
-            new CompressorPoint(50,
-            [
-                2396.20919901144, 69.4448899794199, -5.00691806645477, 0.899339507043113, -0.00410373098918049,
-                -0.00457899885315599, 0.00873555952226035, 0.00163967376135643, -0.000277241052561197,
-                -0.00000000165694956689
-            ],
-            [
-                -15179.3465346534, -464.76089108911, 754.703465346531, -4.01655742574256, 1.45824059405942,
-                -3.04439702970294, 0.0102332673267327, -0.0566240792079209, 0.0384600297029703, 0.00535540990099
-            ], null)
-        ]
-    };
+    /// <summary>The folder of compressor models that ships with the program, next to its assemblies.</summary>
+    public static string ShippedDirectory => Path.Combine(AppContext.BaseDirectory, "Compressors");
 
     private readonly Lock _lock = new();
     private readonly FileSystemWatcher? _watcher;
-    private IReadOnlyList<CompressorModel> _models = [ExampleModel];
+    private IReadOnlyList<CompressorModel> _models = [];
     private IReadOnlyList<string> _problems = [];
     private bool _dirty = true;
     private int _version;
 
-    /// <summary>A library without a folder (only the example model), e.g. for tests.</summary>
+    /// <summary>A library without a folder and without models, e.g. for tests.</summary>
     public static CompressorLibrary Empty { get; } = new();
 
     private CompressorLibrary()
@@ -170,18 +137,12 @@ public sealed class CompressorLibrary : IDisposable
         _dirty = false;
     }
 
-    /// <param name="directory">Folder with the model files; created with a README when missing.</param>
+    /// <param name="directory">Folder with the model files, e.g. <see cref="ShippedDirectory"/>.</param>
     public CompressorLibrary(string directory)
     {
         Directory = Path.GetFullPath(directory);
         try
         {
-            if (!System.IO.Directory.Exists(Directory))
-            {
-                System.IO.Directory.CreateDirectory(Directory);
-                File.WriteAllText(Path.Combine(Directory, ReadmeFileName), Readme);
-            }
-
             _watcher = new FileSystemWatcher(Directory, "*.json")
             {
                 IncludeSubdirectories = true,
@@ -204,7 +165,7 @@ public sealed class CompressorLibrary : IDisposable
     /// <summary>The library folder; null for <see cref="Empty"/>.</summary>
     public string? Directory { get; }
 
-    /// <summary>The example model, then the folder's models sorted by name; re-read when the folder changed.</summary>
+    /// <summary>The folder's models sorted by name; re-read when the folder changed.</summary>
     public IReadOnlyList<CompressorModel> Models
     {
         get
@@ -262,15 +223,15 @@ public sealed class CompressorLibrary : IDisposable
         List<CompressorModel> models = [];
         List<string> problems = [];
         string[] files;
+        if (!System.IO.Directory.Exists(directory))
+            return ([], [$"The compressor library folder {directory} does not exist."]);
         try
         {
-            files = System.IO.Directory.Exists(directory)
-                ? System.IO.Directory.GetFiles(directory, "*.json", SearchOption.AllDirectories)
-                : [];
+            files = System.IO.Directory.GetFiles(directory, "*.json", SearchOption.AllDirectories);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return ([ExampleModel], [$"The compressor library folder cannot be read: {ex.Message}"]);
+            return ([], [$"The compressor library folder cannot be read: {ex.Message}"]);
         }
 
         foreach (string path in files.Order(StringComparer.Ordinal))
@@ -289,16 +250,14 @@ public sealed class CompressorLibrary : IDisposable
 
             foreach (CompressorModel model in Parse(text, relative, problems))
             {
-                if (model.Name == ExampleModelName)
-                    problems.Add($"{relative}: the model name '{model.Name}' is reserved for the built-in example; skipped.");
-                else if (models.Any(m => m.Name == model.Name))
+                if (models.Any(m => m.Name == model.Name))
                     problems.Add($"{relative}: the model name '{model.Name}' is already used in {models.First(m => m.Name == model.Name).File}; skipped.");
                 else
                     models.Add(model);
             }
         }
 
-        return ([ExampleModel, .. models.OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase)], problems);
+        return (models.OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase).ToList(), problems);
     }
 
     private static readonly JsonDocumentOptions JsonOptions = new()
@@ -801,72 +760,4 @@ public sealed class CompressorLibrary : IDisposable
     }
 
     public void Dispose() => _watcher?.Dispose();
-
-    /// <summary>Written into a new library folder to explain the file format.</summary>
-    public const string Readme =
-        """
-        EN 12900 compressor library
-        ===========================
-
-        Every .json file in this folder (and its subfolders) adds compressor models to the
-        "Model" list of the "Compressor (EN 12900)" component. Changes are picked up
-        automatically. Choosing a model copies all of its data into the system, so saved
-        .cycle.json files keep working without the library.
-
-        A file holds one model, or several in a "models" array. Settings next to "models"
-        apply to every model in the file unless a model sets them itself; settings of a
-        model apply to its variants unless a variant sets them itself.
-
-        {
-          "manufacturer": "Acme",                  // optional, shown in front of the name
-          "refrigerant": "CarbonDioxide",          // optional, CoolProp name (R744, R134a, ...)
-          "dischargeVariable": "pressure",         // "pressure" (bar abs.) or "saturationTemperature" (°C)
-          "nominalSuperheat": 10,                  // K, suction superheat of the polynomials
-          "massFlowUnit": "kg/h",                  // "kg/h" (default) or "kg/s"
-          "powerUnit": "W",                        // "W" (default) or "kW"
-          "nominalVoltage": 400,                   // V the current polynomials were measured at
-          "models": [
-            {
-              "name": "AC-100",
-              "variants": [
-                // Fixed speed: one polynomial set, measured at the net frequency.
-                { "speed": "fixed", "netFrequency": 50,
-                  "massFlow": [c1, ..., c10], "power": [c1, ..., c10], "current": [c1, ..., c10] },
-                { "speed": "fixed", "netFrequency": 60, "nominalVoltage": 460,
-                  "massFlow": [...], "power": [...], "current": [...] },
-
-                // Variable speed, one set per measured frequency, interpolated between them
-                // (quadratic with three or more, linear with two; extrapolated beyond them).
-                { "speed": "variable", "netFrequency": 50, "scaling": "interpolate",
-                  "frequencies": [
-                    { "frequency": 30, "massFlow": [...], "power": [...], "current": [...] },
-                    { "frequency": 50, "massFlow": [...], "power": [...], "current": [...] },
-                    { "frequency": 70, "massFlow": [...], "power": [...], "current": [...] }
-                  ] },
-
-                // Variable speed from one set: mass flow and power scale linearly with
-                // frequency. The set is measured at netFrequency unless "frequency" is given.
-                { "speed": "variable", "netFrequency": 60, "scaling": "linear",
-                  "massFlow": [...], "power": [...], "current": [...] }
-              ]
-            }
-          ]
-        }
-
-        "scaling" is "linear" (one set) or "interpolate" (several sets); it defaults to
-        linear for one set and interpolate for several. "current" is optional (A); when
-        given, "nominalVoltage" is required and the current is scaled by nominal / net
-        voltage. Below the net frequency the drive lowers the voltage, so the current is
-        interpolated only from sets at or below the net frequency (with linear scaling it
-        stays constant there); above it only from sets at or above it.
-
-        A variant without "netFrequency" applies to any net frequency (give "frequency").
-        The older format with "massFlow", "power", "current" and "nominalFrequency" directly
-        on the model is still read as fixed and variable speed at that net frequency.
-
-        The ten coefficients follow EN 12900:
-          c1 + c2·S + c3·D + c4·S² + c5·S·D + c6·D² + c7·S³ + c8·S²·D + c9·S·D² + c10·D³
-        with S the suction saturation temperature (°C) and D the discharge variable.
-        Comments (// ...) and trailing commas are allowed. Model names must be unique.
-        """;
 }

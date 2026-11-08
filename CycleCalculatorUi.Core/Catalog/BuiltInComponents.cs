@@ -626,6 +626,11 @@ public static class BuiltInComponents
                 new RepeatGroupDescriptor(Group, "Compressor")
             ],
             Check = node => En12900Library.Check(node, library),
+            Initialize = node =>
+            {
+                if (library.Models.FirstOrDefault() is { } model)
+                    En12900Library.Apply(node, 0, model);
+            },
             Parameters =
             [
                 new ParameterDescriptor("dischargeCondition", "Discharge condition", ParameterKind.Choice)

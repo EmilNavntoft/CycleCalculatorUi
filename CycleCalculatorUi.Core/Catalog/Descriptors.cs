@@ -140,9 +140,6 @@ public sealed record ParameterDescriptor(string Key, string Label, ParameterKind
     /// </summary>
     public Action<NodeModel, string, string>? OnChosen { get; init; }
 
-    /// <summary>Embedded data a new node stores in <see cref="NodeModel.Texts"/> under the parameter's key.</summary>
-    public string? DefaultText { get; init; }
-
     /// <summary>Read-only information shown under the parameter, given the node and the storage key.</summary>
     public Func<NodeModel, string, string?>? Info { get; init; }
 
@@ -266,6 +263,11 @@ public sealed class ComponentDescriptor
     /// <summary>Groups of parameters a node can repeat; see <see cref="ParameterDescriptor.Group"/>.</summary>
     public IReadOnlyList<RepeatGroupDescriptor> RepeatGroups { get; init; } = [];
 
+    /// <summary>
+    /// Further set-up of a new node after the parameter defaults, e.g. choosing the first library compressor model.
+    /// </summary>
+    public Action<NodeModel>? Initialize { get; init; }
+
     /// <summary>Creates the backend component; throws ArgumentException for invalid parameters.</summary>
     public required Func<BuildContext, CycleComponent> Create { get; init; }
 
@@ -384,9 +386,6 @@ public sealed class ComponentDescriptor
                     node.Choices[parameter.Key] = parameter.DefaultChoice ?? parameter.Options.FirstOrDefault()?.Value ?? "";
                     break;
             }
-
-            if (parameter.DefaultText is not null)
-                node.Texts[parameter.Key] = parameter.DefaultText;
         }
 
         foreach (RepeatGroupDescriptor group in RepeatGroups)
@@ -395,6 +394,7 @@ public sealed class ComponentDescriptor
         node.Fluids = Streams
             .Select((_, stream) => (stream < StreamDefaults.Count ? StreamDefaults[stream] : null) ?? fluid)
             .ToList();
+        Initialize?.Invoke(node);
         return node;
     }
 }

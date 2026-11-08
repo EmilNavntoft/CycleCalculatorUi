@@ -182,7 +182,7 @@ public class CompressorLibraryTests
     [Test]
     public void Write_ReadsBackToTheSameModel()
     {
-        foreach (CompressorModel model in ParseClean(VariantModel).Concat(ParseClean(TwoLegacyModels)).Append(CompressorLibrary.ExampleModel))
+        foreach (CompressorModel model in ParseClean(VariantModel).Concat(ParseClean(TwoLegacyModels)).Append(ExampleSystems.EjectorCompressor))
         {
             string text = CompressorLibrary.Write(model);
             List<string> problems = [];
@@ -196,29 +196,63 @@ public class CompressorLibraryTests
     }
 
     [Test]
-    public void Library_CreatesTheFolderWithAReadmeAndReadsNewFiles()
+    public void Library_ReadsNewFilesAndReportsAMissingFolder()
     {
         using CompressorLibrary library = new(_directory);
-        Assert.That(File.Exists(Path.Combine(_directory, CompressorLibrary.ReadmeFileName)));
-        Assert.That(library.Models.Select(m => m.Name), Is.EqualTo(new[] { CompressorLibrary.ExampleModelName }));
+        Assert.That(library.Models, Is.Empty);
+        Assert.That(library.Problems.Single(), Does.Contain("does not exist"));
 
+        Directory.CreateDirectory(_directory);
         File.WriteAllText(Path.Combine(_directory, "acme.json"), TwoLegacyModels);
         Directory.CreateDirectory(Path.Combine(_directory, "other"));
         File.WriteAllText(Path.Combine(_directory, "other", "dup.json"), TwoLegacyModels);
         library.Reload();
 
         Assert.That(library.Models.Select(m => m.Name),
-            Is.EqualTo(new[] { CompressorLibrary.ExampleModelName, "Acme A-1", "Acme A-2" }));
+            Is.EqualTo(new[] { "Acme A-1", "Acme A-2" }));
         Assert.That(library.Problems, Has.Count.EqualTo(2).And.All.Contains("is already used in acme.json"));
     }
 
     [Test]
-    public void NewCompressors_UseTheBuiltInExampleModel()
+    public void ShippedCollection_IsCopiedNextToTheProgram()
     {
-        NodeModel node = ExampleSystems.EjectorHeatPump().Nodes.Single(n => n.Name == "Comp1");
+        Assert.That(File.Exists(Path.Combine(CompressorLibrary.ShippedDirectory, CompressorLibrary.ReadmeFileName)));
+        using CompressorLibrary library = new(CompressorLibrary.ShippedDirectory);
+        Assert.That(library.Problems, Is.Empty);
+    }
 
-        Assert.That(node.Choices[En12900Library.ModelKey], Is.EqualTo(CompressorLibrary.ExampleModelName));
-        Assert.That(En12900Library.Embedded(node, 0)!.Name, Is.EqualTo(CompressorLibrary.ExampleModelName));
+    [Test]
+    public void NewCompressors_UseTheFirstLibraryModel()
+    {
+        (EditorState state, _, _) = EditorWithLibrary();
+        NodeModel node = state.Catalog.Get("En12900Compressor").CreateNode("C", 0, 0, state.Document.DefaultFluid);
+
+        Assert.That(node.Choices[En12900Library.ModelKey], Is.EqualTo("Acme A-1"));
+        Assert.That(En12900Library.Embedded(node, 0)!.Name, Is.EqualTo("Acme A-1"));
+    }
+
+    [Test]
+    public void WithAnEmptyLibrary_NewCompressorsAskForAModel()
+    {
+        ComponentCatalog catalog = ComponentCatalog.Default;
+        SystemDocument document = new();
+        NodeModel node = catalog.Get("En12900Compressor").CreateNode("C", 0, 0, document.DefaultFluid);
+        document.Nodes.Add(node);
+
+        ParameterDescriptor model = catalog.Get(node.TypeId).FindParameter(En12900Library.ModelKey)!;
+        Assert.That(model.OptionsShown(node, document, catalog).Single().Label, Is.EqualTo("No models in the library"));
+        Assert.That(new ModelBuilder(catalog).Validate(document),
+            Has.Some.Matches<ValidationIssue>(i => i.ParameterKey == En12900Library.ModelKey && i.Message.Contains("choose a compressor model")));
+    }
+
+    [Test]
+    public void TheEjectorExample_EmbedsItsCompressorWithoutWarnings()
+    {
+        SystemDocument document = ExampleSystems.EjectorHeatPump();
+        NodeModel node = document.Nodes.Single(n => n.Name == "Comp1");
+
+        Assert.That(En12900Library.Embedded(node, 0)!.Name, Is.EqualTo(ExampleSystems.EjectorCompressor.Name));
+        Assert.That(new ModelBuilder(ComponentCatalog.Default).Validate(document), Is.Empty);
     }
 
     [Test]
@@ -325,7 +359,7 @@ public class CompressorLibraryTests
     }
 
     [Test]
-    public void ChangedOrMissingModels_GiveWarningsAndReloadUpdatesThem()
+    public void ChangedModels_GiveWarningsAndReloadUpdatesThem()
     {
         (EditorState state, NodeModel node, CompressorLibrary library) = EditorWithLibrary();
         state.SetChoice(node.Id, En12900Library.ModelKey, "Acme A-1");
@@ -341,17 +375,18 @@ public class CompressorLibraryTests
         Assert.That(state.IssuesFor(node.Id).Where(i => i.ParameterKey == En12900Library.ModelKey), Is.Empty);
         Assert.That(En12900Library.Embedded(state.Document.FindNode(node.Id)!, 0)!.Variants[0].Points[0].Power[0], Is.EqualTo(6000));
 
+        // Removed from the library: the stored data is used without a warning; the choice is marked.
         File.Delete(Path.Combine(_directory, "acme.json"));
         library.Reload();
-        ValidationIssue missing = state.IssuesFor(node.Id).Single(i => i.ParameterKey == En12900Library.ModelKey);
-        Assert.That(missing.Severity, Is.EqualTo(IssueSeverity.Warning));
-        Assert.That(missing.Message, Does.Contain("not in the compressor library"));
+        Assert.That(state.IssuesFor(node.Id).Where(i => i.ParameterKey == En12900Library.ModelKey), Is.Empty);
+        Assert.That(model.OptionsShown(state.Document.FindNode(node.Id)!, En12900Library.ModelKey, state.Document, state.Catalog)
+            .Select(o => o.Label), Has.Some.EqualTo("Acme A-1 (not in library)"));
     }
 
     /// <summary>Turns a compressor node back into the format-2 shape: polynomials as parameters.</summary>
     private static string ToFormat2(SystemDocument document, NodeModel node, double nominalFrequency)
     {
-        CompressorPoint example = CompressorLibrary.ExampleModel.Variants[0].Points[0];
+        CompressorPoint example = ExampleSystems.EjectorCompressor.Variants[0].Points[0];
         node.Texts.Clear();
         node.Choices.Remove(En12900Library.ModelKey);
         node.Choices.Remove(En12900Library.NetFrequencyKey);

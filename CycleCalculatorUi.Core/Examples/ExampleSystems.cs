@@ -1,4 +1,6 @@
 using CycleCalculator.CycleModel.Fluids;
+using CycleCalculator.CycleModel.Model;
+using CycleCalculator.CycleModel.Model.En12900;
 using CycleCalculatorUi.Core.Catalog;
 using CycleCalculatorUi.Core.Document;
 
@@ -10,6 +12,40 @@ public sealed record ExampleSystem(string Title, string Description, Func<System
 public static class ExampleSystems
 {
     private static readonly FluidSelection Co2 = new(CoolPropFluids.CarbonDioxide, CoolPropBackends.HEOS);
+
+    /// <summary>
+    /// The CO₂ compressor of <see cref="EjectorHeatPump"/> (from the backend's end-to-end tests): one polynomial set
+    /// measured at 50 Hz that scales linearly, for any net frequency. It is embedded in the example, not in the library.
+    /// </summary>
+    public static CompressorModel EjectorCompressor { get; } = new()
+    {
+        Name = "CO₂ compressor (example data)",
+        File = "",
+        DischargeVariable = En12900DischargeVariable.Pressure,
+        NominalSuperheat = 10,
+        MassFlowUnit = En12900MassFlowUnit.KilogramsPerHour,
+        PowerUnit = En12900PowerUnit.Watts,
+        Variants = [EjectorCompressorVariant(CompressorSpeed.Fixed), EjectorCompressorVariant(CompressorSpeed.Variable)]
+    };
+
+    private static CompressorVariant EjectorCompressorVariant(CompressorSpeed speed) => new()
+    {
+        Speed = speed,
+        Scaling = En12900FrequencyScaling.Linear,
+        Points =
+        [
+            new CompressorPoint(50,
+            [
+                2396.20919901144, 69.4448899794199, -5.00691806645477, 0.899339507043113, -0.00410373098918049,
+                -0.00457899885315599, 0.00873555952226035, 0.00163967376135643, -0.000277241052561197,
+                -0.00000000165694956689
+            ],
+            [
+                -15179.3465346534, -464.76089108911, 754.703465346531, -4.01655742574256, 1.45824059405942,
+                -3.04439702970294, 0.0102332673267327, -0.0566240792079209, 0.0384600297029703, 0.00535540990099
+            ], null)
+        ]
+    };
 
     public static IReadOnlyList<ExampleSystem> All { get; } =
     [
@@ -95,6 +131,7 @@ public static class ExampleSystems
         FluidSelection water = new(CoolPropFluids.Water, CoolPropBackends.HEOS);
         DocumentBuilder b = new(ComponentCatalog.Default, "CO₂ heat pump with ejector", co2);
         NodeModel comp = b.Add("En12900Compressor", "Comp1", 80, 80);
+        En12900Library.Apply(comp, 0, EjectorCompressor);
         NodeModel ejector = b.Add("FixedEfficiencyEjector", "Ejector", 704, 80, ("isentropicEfficiency", 0.3));
         NodeModel receiver = b.Add("Receiver", "Receiver", 912, 80);
         NodeModel gasCooler = b.Add("FixedUaHeatExchanger", "Gas cooler", 288, 80, ("ua", 30));
