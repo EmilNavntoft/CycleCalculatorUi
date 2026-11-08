@@ -40,7 +40,7 @@
     else
     {
         PhChart c = Current;
-        <svg class="ph-chart @(State.IsResultStale ? "stale" : "")" viewBox="0 0 @W @H" preserveAspectRatio="xMidYMid meet"
+        <svg class="ph-chart @(State.IsResultMuted ? "stale" : "")" viewBox="0 0 @W @H" preserveAspectRatio="xMidYMid meet"
              role="img" aria-label="Log p-h diagram of @c.Label"
              data-fluid="@c.Fluid" data-seq="@_seq" data-plot="@L @T @PlotW @PlotH"
              data-view="@Exact(c.MinEnthalpy) @Exact(c.MaxEnthalpy) @Exact(c.MinPressure) @Exact(c.MaxPressure)">

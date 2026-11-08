@@ -3,7 +3,7 @@
 
 @{
     SolveResult? result = State.Result;
-    bool stale = State.IsResultStale;
+    bool stale = State.IsResultMuted;
     IReadOnlyList<FluidCircuit> circuits = State.Circuits;
     HashSet<FluidCircuit> conflicts = circuits.Where(c => c.HasConflict).ToHashSet();
     HashSet<(string, string)> issuePorts = State.Issues
@@ -82,7 +82,7 @@
 
         @if (ShowValues && result is { HasResults: true })
         {
-            <g class="values @(stale ? "stale" : "") @(result.Success || result.IsInvalidSolution ? "" : "unconverged")">
+            <g class="values @(stale ? "stale" : "") @(result.Success || result.IsInvalidSolution || result.IsStartGuess ? "" : "unconverged")">
                 @foreach (ConnectionModel connection in State.Document.Connections.Where(c => c.Kind == ConnectionKind.Fluid))
                 {
                     if (State.Document.FindNode(connection.From.NodeId) is not { } node ||

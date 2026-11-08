@@ -127,6 +127,9 @@ public sealed class EditorState(ComponentCatalog catalog, SolveService solver)
         }
     }
 
+    /// <summary>True when the shown result is out of date or only start guesses, so it is drawn greyed out.</summary>
+    public bool IsResultMuted => IsResultStale || Result is { IsStartGuess: true };
+
     private void Refresh()
     {
         if (_cachedRevision == _revision)

@@ -1,5 +1,5 @@
 @* Shown above results from a failed solve: an unconverged iterate, or a solved state that is not physical. *@
-<div class="unconverged-notice" role="alert">
+<div class="unconverged-notice @(Result.IsStartGuess ? "start-guess" : "")" role="@(Result.IsStartGuess ? "status" : "alert")">
     @if (Result.IsStartGuess)
     {
         <strong>Start guesses — not solved.</strong>

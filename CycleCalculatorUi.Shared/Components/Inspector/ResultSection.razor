@@ -1,7 +1,7 @@
 ﻿@* Calculated port states and component outputs of one node. *@
 @if (State.Result is { HasResults: true } result && result.Ports.TryGetValue(Node.Id, out var ports))
 {
-    <section class="inspector-section results @(State.IsResultStale ? "stale" : "")">
+    <section class="inspector-section results @(State.IsResultMuted ? "stale" : "")">
         <h3>Results @if (result.IsStartGuess) { <span class="badge">start guess</span> } else if (result.HasReversedFlow) { <span class="badge error">reversed flow</span> } else if (result.ReversedPressureNodes.Contains(Node.Id)) { <span class="badge error">pressure rises</span> } else if (result.HasReversedPressure) { <span class="badge error">invalid solution</span> } else if (!result.Success) { <span class="badge error">not converged</span> } @if (State.IsResultStale) { <span class="badge">out of date</span> }</h3>
         <table class="result-table">
             <thead>

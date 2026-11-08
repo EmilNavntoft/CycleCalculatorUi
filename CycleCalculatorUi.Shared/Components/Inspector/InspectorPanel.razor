@@ -151,7 +151,7 @@
         </dl>
         @if (connection.Kind == ConnectionKind.Fluid && State.Result?.Port(connection.From.NodeId, connection.From.PortKey) is { } value)
         {
-            <dl class="facts @(State.IsResultStale ? "stale" : "")">
+            <dl class="facts @(State.IsResultMuted ? "stale" : "")">
                 <dt>Mass flow</dt><dd><MassFlowText Value="FlowDirection.Of(State.Document, State.Catalog, connection.From, value)"/> kg/s</dd>
                 <dt>Pressure</dt><dd>@Format.Pressure(value.Pressure) bar</dd>
                 <dt>Temperature</dt><dd>@Format.Temperature(value.Temperature) °C</dd>

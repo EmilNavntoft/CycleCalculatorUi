@@ -90,7 +90,7 @@
                     <UnconvergedNotice Result="result"/>
                 }
                 EnergySummary energy = EnergyBalance.Compute(State.Document, State.Catalog, result);
-                <dl class="energy-totals @(State.IsResultStale ? "stale" : "")" title="@EnergyTooltip(energy)">
+                <dl class="energy-totals @(State.IsResultMuted ? "stale" : "")" title="@EnergyTooltip(energy)">
                     <div><dt>Heat input</dt><dd>@Format.Number(energy.HeatIn, 5) <small>kW</small></dd></div>
                     <div><dt>Heat output</dt><dd>@Format.Number(energy.HeatOut, 5) <small>kW</small></dd></div>
                     <div><dt>Power input</dt><dd>@Format.Number(energy.PowerIn, 5) <small>kW</small></dd></div>
@@ -100,7 +100,7 @@
                         <div><dt>COP cooling</dt><dd>@Format.Number(energy.CopCooling, 4)</dd></div>
                     }
                 </dl>
-                <table class="result-table wide @(State.IsResultStale ? "stale" : "")">
+                <table class="result-table wide @(State.IsResultMuted ? "stale" : "")">
                     <thead>
                     <tr><th>Component</th><th>Port</th><th>ṁ<small>kg/s</small></th><th>p<small>bar</small></th><th>T<small>°C</small></th><th>h<small>kJ/kg</small></th></tr>
                     </thead>
@@ -180,7 +180,7 @@
 
     /// <summary>The solver's message when the last calculation failed for a reason other than validation.</summary>
     private string? SolverFailure =>
-        State.Result is { Success: false } result && !State.IsResultStale &&
+        State.Result is { Success: false } result && !State.IsResultStale && !(result.IsStartGuess && result.HasResults) &&
         result.Issues.All(i => i.Severity != IssueSeverity.Error)
             ? result.Message
             : null;
