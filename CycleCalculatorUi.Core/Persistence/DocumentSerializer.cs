@@ -2,6 +2,8 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using CycleCalculator.CycleModel.Model;
+using CycleCalculator.CycleModel.Model.En12900;
 using CycleCalculatorUi.Core.Catalog;
 using CycleCalculatorUi.Core.Document;
 
@@ -44,6 +46,8 @@ public static class DocumentSerializer
                 $"The file was saved by a newer version of the editor (format {document.Version}).");
 
         Upgrade(document);
+        if (document.Version < 3)
+            EmbedCompressorModels(document);
         document.Version = SystemDocument.CurrentVersion;
         return document;
     }
@@ -67,6 +71,84 @@ public static class DocumentSerializer
                     RepeatGroupDescriptor.ItemKey("operatingFrequency", index), out double? frequency) && frequency.HasValue;
                 node.Choices[speedKey] = hasFrequency ? "variable" : "fixed";
             }
+        }
+    }
+
+    /// <summary>
+    /// Up to format 2, EN 12900 compressors held their polynomials as editable parameters (per compressor, with node-wide
+    /// units, discharge variable and superheat). They are now always a model embedded in the node; the stored polynomials
+    /// become a model for any net frequency that scales linearly from its nominal frequency, so results stay the same.
+    /// </summary>
+    private static void EmbedCompressorModels(SystemDocument document)
+    {
+        string[] nodeKeys = ["massFlowUnit", "powerUnit", "dischargeVariable", "nominalSuperheat"];
+        string[] itemKeys = ["massFlowPolynomial", "powerPolynomial", "currentPolynomial", "nominalFrequency"];
+        CompressorPoint example = CompressorLibrary.ExampleModel.Variants[0].Points[0];
+        foreach (NodeModel node in document.Nodes.Where(n => n.TypeId == nameof(CycleCalculator.CycleModel.Model.En12900Compressor)))
+        {
+            En12900MassFlowUnit massFlowUnit = Enum.TryParse(node.Choices.GetValueOrDefault("massFlowUnit"), out En12900MassFlowUnit m)
+                ? m
+                : En12900MassFlowUnit.KilogramsPerHour;
+            En12900PowerUnit powerUnit = Enum.TryParse(node.Choices.GetValueOrDefault("powerUnit"), out En12900PowerUnit p)
+                ? p
+                : En12900PowerUnit.Watts;
+            En12900DischargeVariable discharge = Enum.TryParse(node.Choices.GetValueOrDefault("dischargeVariable"), out En12900DischargeVariable d)
+                ? d
+                : En12900DischargeVariable.Pressure;
+            double superheat = node.Numbers.GetValueOrDefault("nominalSuperheat") ?? 10;
+
+            int count = Math.Max(1, node.GroupCounts.GetValueOrDefault(En12900Library.Group, 1));
+            for (int index = 0; index < count; index++)
+            {
+                string Key(string key) => RepeatGroupDescriptor.ItemKey(key, index);
+                string modelKey = Key(En12900Library.ModelKey);
+                if (node.Texts.ContainsKey(modelKey))
+                    continue;
+
+                double frequency = node.Numbers.GetValueOrDefault(Key("nominalFrequency")) ?? 50;
+                if (index == 0)
+                    node.Choices[En12900Library.NetFrequencyKey] = frequency == 60 ? "60" : "50";
+                CompressorPoint point = new(frequency,
+                    node.Arrays.GetValueOrDefault(Key("massFlowPolynomial")) ?? example.MassFlow,
+                    node.Arrays.GetValueOrDefault(Key("powerPolynomial")) ?? example.Power,
+                    node.Arrays.GetValueOrDefault(Key("currentPolynomial")));
+                string name = node.Choices.GetValueOrDefault(modelKey) is { Length: > 0 } stored
+                    ? stored
+                    : count > 1 ? $"Custom compressor {index + 1} (from older file)" : "Custom compressor (from older file)";
+                CompressorModel model = new()
+                {
+                    Name = name,
+                    File = "",
+                    DischargeVariable = discharge,
+                    NominalSuperheat = superheat,
+                    MassFlowUnit = massFlowUnit,
+                    PowerUnit = powerUnit,
+                    Variants =
+                    [
+                        new CompressorVariant { Speed = CompressorSpeed.Fixed, Scaling = En12900FrequencyScaling.Linear, Points = [point] },
+                        new CompressorVariant { Speed = CompressorSpeed.Variable, Scaling = En12900FrequencyScaling.Linear, Points = [point] }
+                    ]
+                };
+                node.Choices[modelKey] = name;
+                node.Texts[modelKey] = CompressorLibrary.Write(model);
+                foreach (string key in itemKeys)
+                {
+                    node.Arrays.Remove(Key(key));
+                    node.Numbers.Remove(Key(key));
+                }
+            }
+
+            foreach (string key in nodeKeys)
+            {
+                node.Choices.Remove(key);
+                node.Numbers.Remove(key);
+            }
+
+            node.Numbers.TryAdd(En12900Library.NetVoltageKey, 400);
+            node.Choices.TryAdd(En12900Library.NetFrequencyKey, "50");
+            document.Study?.Variables.RemoveAll(v => v.NodeId == node.Id &&
+                                                    (nodeKeys.Contains(v.ParameterKey) ||
+                                                     itemKeys.Contains(RepeatGroupDescriptor.Parse(v.ParameterKey).ParameterKey)));
         }
     }
 

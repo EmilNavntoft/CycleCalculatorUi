@@ -27,14 +27,14 @@ public class ParallelCompressorTests
     public void AddGroupItem_CopiesTheLastCompressorAndUndoRemovesIt()
     {
         (EditorState state, NodeModel node) = EditorWithCompressor();
-        double[] massFlow = node.Arrays["massFlowPolynomial"]!;
+        string model = node.Texts[En12900Library.ModelKey];
 
         state.AddGroupItem(node.Id, Group);
         node = state.Document.FindNode(node.Id)!;
 
         Assert.That(node.GroupCounts[Group], Is.EqualTo(2));
-        Assert.That(node.Arrays["massFlowPolynomial#2"], Is.EqualTo(massFlow));
-        Assert.That(node.Arrays["massFlowPolynomial#2"], Is.Not.SameAs(node.Arrays["massFlowPolynomial"]));
+        Assert.That(node.Texts["model#2"], Is.EqualTo(model));
+        Assert.That(node.Choices["model#2"], Is.EqualTo(node.Choices[En12900Library.ModelKey]));
 
         state.Undo();
         Assert.That(ComponentCatalog.Default.Find(node.TypeId)!.FindGroup(Group)!.Count(state.Document.FindNode(node.Id)!),
@@ -47,20 +47,20 @@ public class ParallelCompressorTests
         (EditorState state, NodeModel node) = EditorWithCompressor();
         state.AddGroupItem(node.Id, Group);
         state.AddGroupItem(node.Id, Group);
-        double[] third = [3, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-        state.SetCoefficients(node.Id, "massFlowPolynomial#3", third);
+        const string third = "third";
+        state.Document.FindNode(node.Id)!.Texts["model#3"] = third;
 
         state.RemoveGroupItem(node.Id, Group, 1);
         node = state.Document.FindNode(node.Id)!;
         Assert.That(node.GroupCounts[Group], Is.EqualTo(2));
-        Assert.That(node.Arrays["massFlowPolynomial#2"], Is.EqualTo(third));
-        Assert.That(node.Arrays.ContainsKey("massFlowPolynomial#3"), Is.False);
+        Assert.That(node.Texts["model#2"], Is.EqualTo(third));
+        Assert.That(node.Texts.ContainsKey("model#3"), Is.False);
 
         state.RemoveGroupItem(node.Id, Group, 0);
         state.RemoveGroupItem(node.Id, Group, 0); // the last compressor cannot be removed
         node = state.Document.FindNode(node.Id)!;
         Assert.That(node.GroupCounts[Group], Is.EqualTo(1));
-        Assert.That(node.Arrays["massFlowPolynomial"], Is.EqualTo(third));
+        Assert.That(node.Texts[En12900Library.ModelKey], Is.EqualTo(third));
     }
 
     [Test]
@@ -68,13 +68,13 @@ public class ParallelCompressorTests
     {
         (EditorState state, NodeModel node) = EditorWithCompressor();
         state.AddGroupItem(node.Id, Group);
-        state.SetCoefficients(node.Id, "powerPolynomial#2", null);
+        state.Document.FindNode(node.Id)!.Texts.Remove("model#2");
 
         IReadOnlyList<ValidationIssue> issues = new ModelBuilder(ComponentCatalog.Default).Validate(state.Document);
 
         ValidationIssue issue = issues.Single(i => i.NodeId == node.Id);
-        Assert.That(issue.ParameterKey, Is.EqualTo("powerPolynomial#2"));
-        Assert.That(issue.Message, Does.Contain("Compressor 2: Power polynomial"));
+        Assert.That(issue.ParameterKey, Is.EqualTo("model#2"));
+        Assert.That(issue.Message, Does.Contain("Compressor 2: choose a compressor model"));
     }
 
     [Test]
@@ -164,8 +164,8 @@ public class ParallelCompressorTests
         NodeModel node = document.Nodes.Single(n => n.Name == "Comp1");
         node.GroupCounts[Group] = 2;
         node.Numbers["operatingFrequency#2"] = 45;
-        node.Arrays["massFlowPolynomial#2"] = node.Arrays["massFlowPolynomial"];
-        node.Arrays["powerPolynomial#2"] = node.Arrays["powerPolynomial"];
+        node.Texts["model#2"] = node.Texts[En12900Library.ModelKey];
+        node.Choices["model#2"] = node.Choices[En12900Library.ModelKey];
         node.Choices.Remove("speedControl");
         string json = DocumentSerializer.Serialize(document);
 

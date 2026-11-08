@@ -48,6 +48,50 @@ public class CompressorCapacityControlTests
     }
 
     [Test]
+    public async Task En12900Compressor_WithInterpolatedData_HoldsTheSuctionPressure()
+    {
+        // Example polynomials measured at 30–70 Hz, with a slightly non-linear frequency dependence.
+        CompressorPoint example = CompressorLibrary.ExampleModel.Variants[0].Points[0];
+        static double Factor(double f) => f / 50 * (1 + 0.002 * (f - 50));
+        CompressorModel model = CompressorLibrary.ExampleModel with
+        {
+            Name = "Interpolated",
+            Variants =
+            [
+                new CompressorVariant
+                {
+                    Speed = CompressorSpeed.Variable, NetFrequency = 50,
+                    Scaling = CycleCalculator.CycleModel.Model.En12900.En12900FrequencyScaling.Interpolated,
+                    Points = [.. new[] { 30.0, 40, 50, 60, 70 }.Select(f => new CompressorPoint(f,
+                        [.. example.MassFlow.Select(c => c * Factor(f))], [.. example.Power.Select(c => c * Factor(f))], null))]
+                }
+            ]
+        };
+
+        DocumentBuilder builder = new(ComponentCatalog.Default, "EN 12900 suction control",
+            new FluidSelection(CoolPropFluids.CarbonDioxide, CoolPropBackends.HEOS));
+        NodeModel comp = builder.Add("En12900Compressor", "Comp1", 0, 0, ("dischargePressure", 90), ("pressureSetpoint", 38));
+        builder.Choice(comp, "capacityControl", "signal").Choice(comp, "controlSign", "negative")
+            .Choice(comp, BuiltInComponents.SpeedControlKey, "variable");
+        En12900Library.Apply(comp, 0, model);
+        NodeModel gasCooler = builder.Add("TemperatureBoundary", "GC", 200, 0, ("outletTemperature", 30));
+        NodeModel valve = builder.Add("ExpansionValve", "EXV", 400, 0);
+        builder.Choice(valve, "mode", "free");
+        NodeModel evaporator = builder.Add("FixedUaEvaporator", "Evap", 600, 0, ("ua", 10));
+        builder.Connect(comp, "Outlet", gasCooler, "Inlet").Connect(gasCooler, "Outlet", valve, "Inlet")
+            .Connect(valve, "Outlet", evaporator, "Inlet").Connect(evaporator, "Outlet", comp, "Inlet")
+            .Connect(comp, "Inlet", comp, "Signal", ConnectionKind.Signal);
+
+        SolveResult result = await _service.SolveAsync(builder.Build());
+
+        Assert.That(result.Success, Is.True, result.Message);
+        Assert.That(result.Port(comp.Id, "Inlet")!.Pressure, Is.EqualTo(38).Within(1e-5));
+        double frequency = result.Outputs[comp.Id].Single(o => o.Label == "Controlled frequency").Value!.Value;
+        Assert.That(frequency, Is.InRange(25, 70));
+        TestContext.Out.WriteLine($"Controlled frequency: {frequency:F2} Hz");
+    }
+
+    [Test]
     public void PressureControlWithoutMeasurement_IsAValidationError()
     {
         (SystemDocument document, NodeModel comp) = Cycle(node => node.Choices["flowSpecification"] = "capacityControl",

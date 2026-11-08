@@ -605,11 +605,7 @@ public static class BuiltInComponents
         static bool Controlled(NodeModel node) => ChoiceIs(node, "capacityControl", "signal");
         static bool VariableSpeed(NodeModel node, int index) =>
             ChoiceIs(node, RepeatGroupDescriptor.ItemKey(SpeedControlKey, index), "variable");
-        const string Group = "compressors";
-
-        string[] terms = ["c1 · 1", "c2 · S", "c3 · D", "c4 · S²", "c5 · S·D", "c6 · D²", "c7 · S³", "c8 · S²·D", "c9 · S·D²", "c10 · D³"];
-        const string polynomialHelp = "Ten EN 12900 coefficients: S is the suction saturation temperature (°C), " +
-                                      "D the discharge variable. Paste a row or column from a spreadsheet.";
+        const string Group = En12900Library.Group;
 
         return new ComponentDescriptor
         {
@@ -617,20 +613,17 @@ public static class BuiltInComponents
             DisplayName = "Compressor (EN 12900)",
             Category = Categories.Compressors,
             NamePrefix = "Comp",
-            Description = "Compressor driven by EN 12900 mass flow and power polynomials. The mass flow is " +
+            Description = "Compressor driven by EN 12900 mass flow, power and current polynomials from the " +
+                          "compressor library, for the chosen net frequency and speed. The mass flow is " +
                           "corrected from the map's nominal superheat to the actual suction density. Add more " +
                           "compressors to model several running in parallel; their flows and powers add up. With " +
                           "speed control, the variable-speed compressors change frequency to " +
                           "hold any value measured through the signal input, e.g. a pressure, a heat transfer or a " +
-                          "pump's envelope position.",
+                          "pump's envelope position.Fscretized evaluates bot",
             Ports = CompressorPorts(Controlled),
             RepeatGroups =
             [
                 new RepeatGroupDescriptor(Group, "Compressor")
-                {
-                    Help = "Compressors in parallel share the suction and discharge conditions, units and nominal superheat. " +
-                           "Only variable-speed compressors can run away from their nominal frequency."
-                }
             ],
             Check = node => En12900Library.Check(node, library),
             Parameters =
@@ -673,106 +666,40 @@ public static class BuiltInComponents
                 },
                 ControlSignParameter(Controlled, "More capacity",
                     "E.g. a suction-side pressure falls with more capacity, a discharge-side pressure rises."),
-                new ParameterDescriptor("dischargeVariable", "Polynomial discharge variable (D)", ParameterKind.Choice)
-                {
-                    DefaultChoice = nameof(En12900DischargeVariable.Pressure),
-                    Options =
-                    [
-                        new ChoiceOption(nameof(En12900DischargeVariable.Pressure), "Discharge pressure (bar abs.)"),
-                        new ChoiceOption(nameof(En12900DischargeVariable.SaturationTemperature), "Discharge saturation temperature (°C)")
-                    ]
-                },
-                new ParameterDescriptor("nominalSuperheat", "Nominal suction superheat", ParameterKind.Number)
-                {
-                    Unit = "K", DefaultNumber = 10, Min = 0,
-                    Help = "Suction superheat at which the polynomials were measured."
-                },
-                En12900Library.ModelParameter(library, Group),
-                new ParameterDescriptor("nominalFrequency", "Nominal frequency", ParameterKind.Number)
-                {
-                    Group = Group, Unit = "Hz", DefaultNumber = En12900Polynomial.DefaultNominalFrequency,
-                    Min = 0, MinExclusive = true,
-                    Help = "Compressor frequency at which the polynomials were measured."
-                },
+                En12900Library.NetFrequencyParameter(),
+                En12900Library.NetVoltageParameter(),
+                En12900Library.ModelParameter(library),
                 new ParameterDescriptor(SpeedControlKey, "Speed", ParameterKind.Choice)
                 {
-                    Group = Group, DefaultChoice = "fixed",
-                    Options =
-                    [
-                        new ChoiceOption("fixed", "Fixed speed (nominal frequency)"),
-                        new ChoiceOption("variable", "Variable speed (frequency controlled)")
-                    ],
-                    Help = "A fixed-speed compressor always runs at its nominal frequency. A variable-speed one can be " +
-                           "given an operating frequency, or follows the speed controller when that is on."
+                    Group = Group, DefaultChoice = "fixed", Options = SpeedOptions,
+                    OptionsFor = (node, key, _, _) =>
+                    {
+                        IReadOnlyList<CompressorSpeed> offered = En12900Library.OfferedSpeeds(node, RepeatGroupDescriptor.Parse(key).Index);
+                        string stored = node.Choices.GetValueOrDefault(key) ?? "fixed";
+                        return
+                        [
+                            .. SpeedOptions.Where(option => option.Value == stored ||
+                                                            offered.Contains(option.Value == "variable" ? CompressorSpeed.Variable : CompressorSpeed.Fixed))
+                        ];
+                    }
                 },
                 new ParameterDescriptor("operatingFrequency", "Operating frequency", ParameterKind.Number)
                 {
                     Group = Group, Unit = "Hz", Optional = true, Min = 0, MinExclusive = true,
                     IsActive = node => !Controlled(node), IsActiveForItem = VariableSpeed,
-                    Help = "Optional. Mass flow, power and current scale linearly with operating / nominal " +
-                           "frequency. Leave empty to run at the nominal frequency."
-                },
-                new ParameterDescriptor("massFlowUnit", "Mass flow polynomial unit", ParameterKind.Choice)
-                {
-                    DefaultChoice = nameof(En12900MassFlowUnit.KilogramsPerHour),
-                    Options =
-                    [
-                        new ChoiceOption(nameof(En12900MassFlowUnit.KilogramsPerHour), "kg/h"),
-                        new ChoiceOption(nameof(En12900MassFlowUnit.KilogramsPerSecond), "kg/s")
-                    ]
-                },
-                new ParameterDescriptor("massFlowPolynomial", "Mass flow polynomial", ParameterKind.Coefficients)
-                {
-                    Group = Group, Length = 10, CoefficientLabels = terms, Help = polynomialHelp,
-                    DefaultCoefficients =
-                    [
-                        2396.20919901144, 69.4448899794199, -5.00691806645477, 0.899339507043113, -0.00410373098918049,
-                        -0.00457899885315599, 0.00873555952226035, 0.00163967376135643, -0.000277241052561197,
-                        -0.00000000165694956689
-                    ]
-                },
-                new ParameterDescriptor("powerUnit", "Power polynomial unit", ParameterKind.Choice)
-                {
-                    DefaultChoice = nameof(En12900PowerUnit.Watts),
-                    Options =
-                    [
-                        new ChoiceOption(nameof(En12900PowerUnit.Watts), "W"),
-                        new ChoiceOption(nameof(En12900PowerUnit.Kilowatts), "kW")
-                    ]
-                },
-                new ParameterDescriptor("powerPolynomial", "Power polynomial", ParameterKind.Coefficients)
-                {
-                    Group = Group, Length = 10, CoefficientLabels = terms, Help = polynomialHelp,
-                    DefaultCoefficients =
-                    [
-                        -15179.3465346534, -464.76089108911, 754.703465346531, -4.01655742574256, 1.45824059405942,
-                        -3.04439702970294, 0.0102332673267327, -0.0566240792079209, 0.0384600297029703, 0.00535540990099
-                    ]
-                },
-                new ParameterDescriptor("currentPolynomial", "Current polynomial (A)", ParameterKind.Coefficients)
-                {
-                    Group = Group, Length = 10, CoefficientLabels = terms, Optional = true,
-                    Help = "Optional. Leave empty if the current is not needed; with several compressors, give it for all or none."
                 }
             ],
             Create = c =>
             {
-                double superheat = c.Number("nominalSuperheat");
-                En12900CompressorMap[] maps = Enumerable.Range(0, c.Count(Group)).Select(index =>
-                {
-                    double[]? current = c.OptionalCoefficients(RepeatGroupDescriptor.ItemKey("currentPolynomial", index));
-                    double nominalFrequency = c.Number(RepeatGroupDescriptor.ItemKey("nominalFrequency", index));
-                    return new En12900CompressorMap(
-                        new En12900Polynomial(c.Coefficients(RepeatGroupDescriptor.ItemKey("massFlowPolynomial", index)), superheat, nominalFrequency),
-                        new En12900Polynomial(c.Coefficients(RepeatGroupDescriptor.ItemKey("powerPolynomial", index)), superheat, nominalFrequency),
-                        current is null ? null : new En12900Polynomial(current, superheat, nominalFrequency),
-                        c.OptionalNumber(RepeatGroupDescriptor.ItemKey("operatingFrequency", index)),
-                        VariableSpeed(c.Node, index));
-                }).ToArray();
+                double netVoltage = c.Number(En12900Library.NetVoltageKey);
+                En12900CompressorMap[] maps = Enumerable.Range(0, c.Count(Group))
+                    .Select(index => En12900Library.BuildMap(c.Node, index, netVoltage,
+                        c.OptionalNumber(RepeatGroupDescriptor.ItemKey("operatingFrequency", index))))
+                    .ToArray();
                 return new En12900Compressor(c.Name, c.Fluid(), c.Backend(), maps,
-                    Enum.Parse<En12900MassFlowUnit>(c.Choice("massFlowUnit")),
-                    Enum.Parse<En12900PowerUnit>(c.Choice("powerUnit")),
-                    Enum.Parse<En12900DischargeVariable>(c.Choice("dischargeVariable")),
+                    En12900MassFlowUnit.KilogramsPerSecond,
+                    En12900PowerUnit.Kilowatts,
+                    En12900Library.DischargeVariable(c.Node),
                     c.Choice("dischargeCondition") == "pressure"
                         ? CompressorDischargeCondition.AtPressure(c.Number("dischargePressure"))
                         : CompressorDischargeCondition.AtSaturationTemperature(c.Number("dischargeSaturationTemperature")),
@@ -977,17 +904,12 @@ public static class BuiltInComponents
         new ParameterDescriptor("profileModel", "Profile model", ParameterKind.Choice)
         {
             DefaultChoice = "movingBoundary",
-            Options = [new ChoiceOption("movingBoundary", "Moving boundary"), new ChoiceOption("discretized", "Discretized")],
-            Help = "Discretized evaluates both fluids at fixed points along the exchanger for every trial heat flow. " +
-                   "Moving boundary splits each stream into zones at its phase changes and evaluates the fluids only " +
-                   "to build those zones, which needs far fewer property calls, especially with the HEOS backend."
+            Options = [new ChoiceOption("movingBoundary", "Moving boundary"), new ChoiceOption("discretized", "Discretized")]
         },
         new ParameterDescriptor("singlePhaseSegments", "Single-phase segments", ParameterKind.Number)
         {
             Unit = "-", DefaultNumber = MovingBoundaryProfile.DefaultSinglePhaseSegments,
-            Min = 1, Max = MovingBoundaryProfile.MaximumSinglePhaseSegments, IsActive = UsesMovingBoundary,
-            Help = "Number of segments each single-phase zone is split into, to follow a changing heat capacity. " +
-                   "More segments are more accurate (most noticeable for supercritical CO2) but slower."
+            Min = 1, Max = MovingBoundaryProfile.MaximumSinglePhaseSegments, IsActive = UsesMovingBoundary
         }
     ];
 
@@ -1076,6 +998,12 @@ public static class BuiltInComponents
 
     /// <summary>Per-compressor choice of an EN 12900 compressor: fixed or variable speed.</summary>
     public const string SpeedControlKey = "speedControl";
+
+    private static readonly ChoiceOption[] SpeedOptions =
+    [
+        new("fixed", "Fixed speed (net frequency)"),
+        new("variable", "Variable speed (frequency controlled)")
+    ];
 
     /// <summary>Choice of what a controller's signal input measures; values are <see cref="MeasuredQuantity.Key"/>.</summary>
     public const string ControlSignalKey = "controlSignal";

@@ -63,6 +63,12 @@ public enum ParameterKind
 
 public sealed record ChoiceOption(string Value, string Label);
 
+/// <summary>
+/// A button next to a parameter. <see cref="IsAvailable"/> and <see cref="Run"/> get the node and the storage key;
+/// <see cref="Run"/> changes the node inside an undoable edit.
+/// </summary>
+public sealed record ParameterAction(string Label, Func<NodeModel, string, bool> IsAvailable, Action<NodeModel, string> Run);
+
 /// <summary>An editable parameter of a component type.</summary>
 public sealed record ParameterDescriptor(string Key, string Label, ParameterKind Kind)
 {
@@ -133,6 +139,15 @@ public sealed record ParameterDescriptor(string Key, string Label, ParameterKind
     /// new value, e.g. copying a library compressor's polynomials. Runs inside the same undoable edit.
     /// </summary>
     public Action<NodeModel, string, string>? OnChosen { get; init; }
+
+    /// <summary>Embedded data a new node stores in <see cref="NodeModel.Texts"/> under the parameter's key.</summary>
+    public string? DefaultText { get; init; }
+
+    /// <summary>Read-only information shown under the parameter, given the node and the storage key.</summary>
+    public Func<NodeModel, string, string?>? Info { get; init; }
+
+    /// <summary>A button shown under the parameter when available, e.g. reloading a model from the library.</summary>
+    public ParameterAction? Action { get; init; }
 
     public bool Active(NodeModel node) => IsActive?.Invoke(node) ?? true;
 
@@ -369,6 +384,9 @@ public sealed class ComponentDescriptor
                     node.Choices[parameter.Key] = parameter.DefaultChoice ?? parameter.Options.FirstOrDefault()?.Value ?? "";
                     break;
             }
+
+            if (parameter.DefaultText is not null)
+                node.Texts[parameter.Key] = parameter.DefaultText;
         }
 
         foreach (RepeatGroupDescriptor group in RepeatGroups)

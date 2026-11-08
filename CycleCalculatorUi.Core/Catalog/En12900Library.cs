@@ -1,34 +1,43 @@
-using CycleCalculator.CycleModel.Model.En12900;
+using System.Collections.Concurrent;
+using System.Globalization;
 using CycleCalculator.CycleModel.Model;
+using CycleCalculator.CycleModel.Model.En12900;
 using CycleCalculatorUi.Core.Building;
 using CycleCalculatorUi.Core.Document;
 
 namespace CycleCalculatorUi.Core.Catalog;
 
 /// <summary>
-/// Choosing EN 12900 compressor models from the <see cref="CompressorLibrary"/>. A chosen model is copied into the
-/// node (polynomials, units, nominal values), so documents stay self-contained; the model name is kept to show
-/// where the values came from and to warn when they no longer match the library.
+/// Choosing EN 12900 compressor models from the <see cref="CompressorLibrary"/>. A chosen model is embedded whole in
+/// the node (<see cref="NodeModel.Texts"/> under the model key, in the library file format), so documents stay
+/// self-contained; the model name is kept to show where the data came from and to warn when it no longer matches the
+/// library. The node's net frequency and the compressor's speed pick the variant that is used.
 /// </summary>
 public static class En12900Library
 {
-    /// <summary>Per-compressor choice of the library model; empty means custom polynomials.</summary>
+    /// <summary>Per-compressor choice of the model; the embedded model data is stored in Texts under the same key.</summary>
     public const string ModelKey = "model";
 
-    public const string Custom = "";
+    public const string NetFrequencyKey = "netFrequency";
 
-    private const string Group = "compressors";
+    public const string NetVoltageKey = "netVoltage";
 
-    public static ParameterDescriptor ModelParameter(CompressorLibrary library, string group) =>
+    public const string Group = "compressors";
+
+    public static readonly string[] StandardNetFrequencies = ["50", "60"];
+
+    private static readonly ConcurrentDictionary<string, CompressorModel?> ParseCache = new();
+
+    public static ParameterDescriptor ModelParameter(CompressorLibrary library) =>
         new(ModelKey, "Model", ParameterKind.Choice)
         {
-            Group = group,
-            DefaultChoice = Custom,
-            Options = [new ChoiceOption(Custom, "Custom polynomials")],
+            Group = Group,
+            DefaultChoice = CompressorLibrary.ExampleModelName,
+            DefaultText = CompressorLibrary.Write(CompressorLibrary.ExampleModel),
+            Options = [new ChoiceOption(CompressorLibrary.ExampleModelName, CompressorLibrary.ExampleModelName)],
             OptionsFor = (node, key, _, _) =>
             {
-                List<ChoiceOption> options = [new(Custom, "Custom polynomials")];
-                options.AddRange(library.Models.Select(model => new ChoiceOption(model.Name, model.Name)));
+                List<ChoiceOption> options = library.Models.Select(model => new ChoiceOption(model.Name, model.Name)).ToList();
                 if (node.Choices.GetValueOrDefault(key) is { Length: > 0 } stored && library.Find(stored) is null)
                     options.Add(new ChoiceOption(stored, $"{stored} (not in library)"));
                 return options;
@@ -38,74 +47,224 @@ public static class En12900Library
                 if (library.Find(value) is { } model)
                     Apply(node, RepeatGroupDescriptor.Parse(key).Index, model);
             },
-            Help = library.Directory is null
-                ? "No compressor library folder is set up."
-                : $"Models from the .json files in {library.Directory} (format in {CompressorLibrary.ReadmeFileName} " +
-                  "there). Choosing one fills in its polynomials, units and nominal values."
+            Action = new ParameterAction("Reload from library",
+                (node, key) => node.Choices.GetValueOrDefault(key) is { } name && library.Find(name) is { } model &&
+                               node.Texts.GetValueOrDefault(key) != CompressorLibrary.Write(model),
+                (node, key) =>
+                {
+                    if (node.Choices.GetValueOrDefault(key) is { } name && library.Find(name) is { } model)
+                        Apply(node, RepeatGroupDescriptor.Parse(key).Index, model);
+                }),
         };
 
-    /// <summary>Copies <paramref name="model"/> into compressor <paramref name="index"/> of an EN 12900 node.</summary>
-    public static void Apply(NodeModel node, int index, CompressorModel model)
-    {
-        node.Choices[RepeatGroupDescriptor.ItemKey(ModelKey, index)] = model.Name;
-
-        // The units, discharge variable and superheat are shared by all compressors of the node, so they only follow
-        // the model when it is the only compressor; otherwise the polynomials are converted to the node's units.
-        if (Count(node) == 1)
+    public static ParameterDescriptor NetFrequencyParameter() =>
+        new(NetFrequencyKey, "Net frequency", ParameterKind.Choice)
         {
-            node.Choices["massFlowUnit"] = model.MassFlowUnit.ToString();
-            node.Choices["powerUnit"] = model.PowerUnit.ToString();
-            node.Choices["dischargeVariable"] = model.DischargeVariable.ToString();
-            node.Numbers["nominalSuperheat"] = model.NominalSuperheat;
-        }
+            DefaultChoice = "50",
+            Options = [new ChoiceOption("50", "50 Hz"), new ChoiceOption("60", "60 Hz")],
+            OptionsFor = (node, key, _, _) =>
+            {
+                IEnumerable<string> offered = Models(node).SelectMany(model => model.NetFrequencies)
+                    .Select(f => f.ToString(CultureInfo.InvariantCulture));
+                string stored = node.Choices.GetValueOrDefault(key) ?? "50";
+                return StandardNetFrequencies.Concat(offered).Append(stored).Distinct()
+                    .OrderBy(f => double.Parse(f, CultureInfo.InvariantCulture))
+                    .Select(f => new ChoiceOption(f, $"{f} Hz")).ToList();
+            },
+        };
 
-        node.Arrays[RepeatGroupDescriptor.ItemKey("massFlowPolynomial", index)] = model.MassFlowIn(MassFlowUnit(node));
-        node.Arrays[RepeatGroupDescriptor.ItemKey("powerPolynomial", index)] = model.PowerIn(PowerUnit(node));
-        node.Arrays[RepeatGroupDescriptor.ItemKey("currentPolynomial", index)] = model.Current?.ToArray();
-        node.Numbers[RepeatGroupDescriptor.ItemKey("nominalFrequency", index)] = model.NominalFrequency;
+    public static ParameterDescriptor NetVoltageParameter() =>
+        new(NetVoltageKey, "Net voltage", ParameterKind.Number)
+        {
+            Unit = "V", DefaultNumber = 400, Min = 0, MinExclusive = true,
+        };
+
+    /// <summary>The speeds compressor <paramref name="index"/>'s model offers at the node's net frequency (all when none).</summary>
+    public static IReadOnlyList<CompressorSpeed> OfferedSpeeds(NodeModel node, int index)
+    {
+        if (Embedded(node, index) is not { } model)
+            return [CompressorSpeed.Fixed, CompressorSpeed.Variable];
+        double net = NetFrequency(node);
+        return [.. Enum.GetValues<CompressorSpeed>().Where(speed => model.Variant(speed, net) is not null)];
     }
 
-    /// <summary>Warnings for compressors whose library model is missing, changed or does not fit the node.</summary>
+    /// <summary>The supply frequency chosen for the node, in Hz.</summary>
+    public static double NetFrequency(NodeModel node) =>
+        double.TryParse(node.Choices.GetValueOrDefault(NetFrequencyKey), NumberStyles.Float, CultureInfo.InvariantCulture,
+            out double frequency) && frequency > 0
+            ? frequency
+            : 50;
+
+    /// <summary>The model embedded for compressor <paramref name="index"/>, or null when missing or unreadable.</summary>
+    public static CompressorModel? Embedded(NodeModel node, int index) =>
+        Embedded(node, RepeatGroupDescriptor.ItemKey(ModelKey, index));
+
+    private static CompressorModel? Embedded(NodeModel node, string key) =>
+        node.Texts.GetValueOrDefault(key) is { Length: > 0 } text ? Read(text) : null;
+
+    /// <summary>Reads embedded model data; cached, since it is read on every validation.</summary>
+    public static CompressorModel? Read(string text)
+    {
+        if (ParseCache.TryGetValue(text, out CompressorModel? cached))
+            return cached;
+        if (ParseCache.Count > 256)
+            ParseCache.Clear();
+        CompressorModel? model = CompressorLibrary.Parse(text, "", [], requireVoltage: false) is [{ } single] ? single : null;
+        ParseCache[text] = model;
+        return model;
+    }
+
+    private static IEnumerable<CompressorModel> Models(NodeModel node) =>
+        Enumerable.Range(0, Count(node)).Select(index => Embedded(node, index)).OfType<CompressorModel>();
+
+    public static CompressorSpeed Speed(NodeModel node, int index) =>
+        node.Choices.GetValueOrDefault(RepeatGroupDescriptor.ItemKey(BuiltInComponents.SpeedControlKey, index)) == "variable"
+            ? CompressorSpeed.Variable
+            : CompressorSpeed.Fixed;
+
+    /// <summary>
+    /// Embeds <paramref name="model"/> as compressor <paramref name="index"/> of an EN 12900 node. When the node's net
+    /// frequency or the compressor's speed has no data in the model, switches to ones that have; when it is the only
+    /// compressor, also takes over the model's nominal voltage as net voltage.
+    /// </summary>
+    public static void Apply(NodeModel node, int index, CompressorModel model)
+    {
+        string key = RepeatGroupDescriptor.ItemKey(ModelKey, index);
+        node.Choices[key] = model.Name;
+        node.Texts[key] = CompressorLibrary.Write(model);
+
+        bool single = Count(node) == 1;
+        double net = NetFrequency(node);
+        if (single && !model.Variants.Any(v => v.NetFrequency is null || v.NetFrequency == net) &&
+            model.NetFrequencies.FirstOrDefault() is var offered and > 0)
+        {
+            net = offered;
+            node.Choices[NetFrequencyKey] = offered.ToString(CultureInfo.InvariantCulture);
+        }
+
+        string speedKey = RepeatGroupDescriptor.ItemKey(BuiltInComponents.SpeedControlKey, index);
+        CompressorSpeed speed = Speed(node, index);
+        if (model.Variant(speed, net) is null)
+        {
+            CompressorSpeed other = speed == CompressorSpeed.Fixed ? CompressorSpeed.Variable : CompressorSpeed.Fixed;
+            if (model.Variant(other, net) is not null)
+            {
+                speed = other;
+                node.Choices[speedKey] = other == CompressorSpeed.Variable ? "variable" : "fixed";
+            }
+        }
+
+        if (single && model.Variant(speed, net)?.NominalVoltage is { } voltage)
+            node.Numbers[NetVoltageKey] = voltage;
+    }
+
+    /// <summary>
+    /// The backend map of compressor <paramref name="index"/>: the variant for its speed and the net frequency, with
+    /// coefficients converted to kg/s and kW.
+    /// </summary>
+    public static En12900CompressorMap BuildMap(NodeModel node, int index, double netVoltage, double? operatingFrequency)
+    {
+        string modelKey = RepeatGroupDescriptor.ItemKey(ModelKey, index);
+        CompressorModel model = Embedded(node, index)
+                                ?? throw new ParameterException(modelKey, "Choose a compressor model.");
+        CompressorSpeed speed = Speed(node, index);
+        double net = NetFrequency(node);
+        CompressorVariant variant = model.Variant(speed, net)
+                                    ?? throw new ParameterException(modelKey, MissingVariant(model, speed, net));
+
+        En12900Polynomial Polynomial(double[] coefficients, double frequency) =>
+            new(coefficients, model.NominalSuperheat, frequency);
+
+        En12900FrequencyPoint[] points = variant.Points.Select(point => new En12900FrequencyPoint(point.Frequency,
+                Polynomial(model.MassFlowIn(point.MassFlow, En12900MassFlowUnit.KilogramsPerSecond), point.Frequency),
+                Polynomial(model.PowerIn(point.Power, En12900PowerUnit.Kilowatts), point.Frequency),
+                point.Current is null ? null : Polynomial(point.Current, point.Frequency)))
+            .ToArray();
+
+        // Data for any net frequency with one set (e.g. from older files) runs at the set's own frequency, as before.
+        double mapNet = variant.NetFrequency ?? (points.Length == 1 ? points[0].Frequency : net);
+        return new En12900CompressorMap(points, variant.Scaling, mapNet, variant.NominalVoltage, netVoltage,
+            speed == CompressorSpeed.Variable ? operatingFrequency : null, speed == CompressorSpeed.Variable);
+    }
+
+    /// <summary>The discharge variable shared by the node's models (the first one's when they differ).</summary>
+    public static En12900DischargeVariable DischargeVariable(NodeModel node) =>
+        Models(node).FirstOrDefault()?.DischargeVariable ?? En12900DischargeVariable.Pressure;
+
+    private static string MissingVariant(CompressorModel model, CompressorSpeed speed, double net) =>
+        $"{model.Name} has no {(speed == CompressorSpeed.Fixed ? "fixed" : "variable")}-speed data for " +
+        $"{CompressorVariant.Format(net)} Hz net frequency. It has: {string.Join("; ", model.Variants.Select(v => v.Label))}.";
+
+    /// <summary>One line about a model for the inspector.</summary>
+    public static string Summary(CompressorModel model)
+    {
+        List<string> parts = [];
+        if (model.Refrigerant is not null)
+            parts.Add(model.Refrigerant);
+        parts.Add(model.DischargeVariable == En12900DischargeVariable.Pressure ? "D = discharge pressure" : "D = discharge sat. temperature");
+        parts.Add($"{CompressorVariant.Format(model.NominalSuperheat)} K superheat");
+        if (!model.HasCurrent)
+            parts.Add("no current data");
+        return string.Join(" · ", parts) + ". Data: " + string.Join("; ", model.Variants.Select(v =>
+            v.Label + (v.NominalVoltage is { } voltage ? $", {CompressorVariant.Format(voltage)} V" : ""))) + ".";
+    }
+
+    /// <summary>Problems with the compressors' models: missing data, mismatches and differences from the library.</summary>
     public static IEnumerable<ValidationIssue> Check(NodeModel node, CompressorLibrary library)
     {
         List<ValidationIssue> issues = [];
-        bool anyModel = false;
+        bool anyLibraryModel = false;
+        double net = NetFrequency(node);
+        En12900DischargeVariable? discharge = null;
+        bool? current = null;
         for (int index = 0; index < Count(node); index++)
         {
             string key = RepeatGroupDescriptor.ItemKey(ModelKey, index);
-            if (node.Choices.GetValueOrDefault(key) is not { Length: > 0 } name)
-                continue;
-            anyModel = true;
+            string prefix = Count(node) > 1 ? $"{node.Name}: Compressor {index + 1}: " : $"{node.Name}: ";
+            void Add(IssueSeverity severity, string message) =>
+                issues.Add(new ValidationIssue(severity, prefix + message, node.Id, key));
 
-            string prefix = $"{node.Name}: Compressor {index + 1}: ";
-            void Warn(string message) => issues.Add(new ValidationIssue(IssueSeverity.Warning, prefix + message, node.Id, key));
-
-            if (library.Find(name) is not { } model)
+            if (Embedded(node, index) is not { } model)
             {
-                Warn($"the model '{name}' is not in the compressor library; its stored polynomials are used.");
+                Add(IssueSeverity.Error, node.Texts.ContainsKey(key)
+                    ? "the stored compressor data cannot be read; choose the model again."
+                    : "choose a compressor model.");
                 continue;
             }
 
-            if (model.DischargeVariable != DischargeVariable(node))
-                Warn($"{model.Name} uses the discharge {(model.DischargeVariable == En12900DischargeVariable.Pressure ? "pressure" : "saturation temperature")} " +
-                     "as polynomial variable D, but the component is set to the other one.");
-            if (Math.Abs(model.NominalSuperheat - (node.Numbers.GetValueOrDefault("nominalSuperheat") ?? 10)) > 1e-9)
-                Warn($"{model.Name} was measured at {model.NominalSuperheat:G6} K superheat, unlike the component's nominal superheat.");
+            CompressorSpeed speed = Speed(node, index);
+            if (model.Variant(speed, net) is not { } variant)
+                Add(IssueSeverity.Error, MissingVariant(model, speed, net));
+            else if (current is null)
+                current = variant.HasCurrent;
+            else if (current != variant.HasCurrent)
+                Add(IssueSeverity.Error, "give all compressors current data or none: some models have current polynomials, others not.");
+
+            if (discharge is null)
+                discharge = model.DischargeVariable;
+            else if (discharge != model.DischargeVariable)
+                Add(IssueSeverity.Error, $"{model.Name} uses a different discharge variable (D) than compressor 1; " +
+                                         "compressors in parallel must share it.");
+
             if (model.Refrigerant is { } refrigerant && node.Fluids.FirstOrDefault()?.Fluid is { } fluid &&
                 !SameFluid(refrigerant, fluid))
-                Warn($"{model.Name} is for {refrigerant}, but the component uses {FluidOptions.FluidLabel(fluid)}.");
+                Add(IssueSeverity.Warning, $"{model.Name} is for {refrigerant}, but the component uses {FluidOptions.FluidLabel(fluid)}.");
 
-            bool changed =
-                !Same(node.Arrays.GetValueOrDefault(RepeatGroupDescriptor.ItemKey("massFlowPolynomial", index)), model.MassFlowIn(MassFlowUnit(node))) ||
-                !Same(node.Arrays.GetValueOrDefault(RepeatGroupDescriptor.ItemKey("powerPolynomial", index)), model.PowerIn(PowerUnit(node))) ||
-                !Same(node.Arrays.GetValueOrDefault(RepeatGroupDescriptor.ItemKey("currentPolynomial", index)), model.Current) ||
-                !Same(node.Numbers.GetValueOrDefault(RepeatGroupDescriptor.ItemKey("nominalFrequency", index)), model.NominalFrequency);
-            if (changed)
-                Warn($"the polynomials or nominal frequency differ from library model {model.Name} (edited here, or the " +
-                     "library file changed). Choose Custom and then the model again to reload them.");
+            if (model.Name == CompressorLibrary.ExampleModelName)
+                continue;
+            if (library.Find(model.Name) is not { } libraryModel)
+            {
+                Add(IssueSeverity.Warning, $"the model '{model.Name}' is not in the compressor library; its stored data is used.");
+                continue;
+            }
+
+            anyLibraryModel = true;
+            if (CompressorLibrary.Write(libraryModel) != node.Texts[key])
+                Add(IssueSeverity.Warning, $"the stored data differs from library model {model.Name} (the library file " +
+                                           "changed). Use \"Reload from library\" to update it.");
         }
 
-        if (anyModel)
+        if (anyLibraryModel)
         {
             foreach (string problem in library.Problems)
                 issues.Add(new ValidationIssue(IssueSeverity.Warning, $"{node.Name}: compressor library: {problem}", node.Id));
@@ -115,27 +274,6 @@ public static class En12900Library
     }
 
     private static int Count(NodeModel node) => Math.Max(1, node.GroupCounts.GetValueOrDefault(Group, 1));
-
-    private static En12900MassFlowUnit MassFlowUnit(NodeModel node) =>
-        Enum.TryParse(node.Choices.GetValueOrDefault("massFlowUnit"), out En12900MassFlowUnit unit)
-            ? unit
-            : En12900MassFlowUnit.KilogramsPerHour;
-
-    private static En12900PowerUnit PowerUnit(NodeModel node) =>
-        Enum.TryParse(node.Choices.GetValueOrDefault("powerUnit"), out En12900PowerUnit unit) ? unit : En12900PowerUnit.Watts;
-
-    private static En12900DischargeVariable DischargeVariable(NodeModel node) =>
-        Enum.TryParse(node.Choices.GetValueOrDefault("dischargeVariable"), out En12900DischargeVariable variable)
-            ? variable
-            : En12900DischargeVariable.Pressure;
-
-    private static bool Same(double[]? stored, double[]? expected) =>
-        stored is null || expected is null
-            ? stored is null && expected is null
-            : stored.Length == expected.Length && stored.Zip(expected).All(p => Same(p.First, p.Second));
-
-    private static bool Same(double? stored, double expected) =>
-        stored is { } value && Math.Abs(value - expected) <= 1e-9 * Math.Max(1, Math.Abs(expected));
 
     private static readonly string[][] FluidAliases =
     [

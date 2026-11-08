@@ -358,6 +358,10 @@ public sealed class EditorState(ComponentCatalog catalog, SolveService solver)
     public void SetCoefficients(string nodeId, string key, double[]? values) =>
         EditNode(nodeId, node => node.Arrays[key] = values);
 
+    /// <summary>Runs the <see cref="ParameterDescriptor.Action"/> of the parameter stored under <paramref name="key"/>.</summary>
+    public void RunParameterAction(string nodeId, string key) =>
+        EditNode(nodeId, node => Catalog.Find(node.TypeId)?.FindParameter(key)?.Action?.Run(node, key));
+
     public void SetChoice(string nodeId, string key, string value) =>
         EditNode(nodeId, node =>
         {
@@ -385,6 +389,8 @@ public sealed class EditorState(ComponentCatalog catalog, SolveService solver)
                     n.Arrays[added] = values?.ToArray();
                 if (n.Choices.TryGetValue(last, out string? choice))
                     n.Choices[added] = choice;
+                if (n.Texts.TryGetValue(last, out string? text))
+                    n.Texts[added] = text;
             }
 
             n.GroupCounts[groupKey] = count + 1;
@@ -412,12 +418,14 @@ public sealed class EditorState(ComponentCatalog catalog, SolveService solver)
                     MoveValue(n.Numbers, source, target);
                     MoveValue(n.Arrays, source, target);
                     MoveValue(n.Choices, source, target);
+                    MoveValue(n.Texts, source, target);
                 }
 
                 string removed = RepeatGroupDescriptor.ItemKey(parameter.Key, count - 1);
                 n.Numbers.Remove(removed);
                 n.Arrays.Remove(removed);
                 n.Choices.Remove(removed);
+                n.Texts.Remove(removed);
             }
 
             n.GroupCounts[groupKey] = count - 1;

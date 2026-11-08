@@ -18,6 +18,14 @@
         {
             <div class="field-message @(IsWarning ? "warning" : "")">@Error</div>
         }
+        @if (parameter.Info?.Invoke(Node, key) is { } info)
+        {
+            <div class="field-info">@info</div>
+        }
+        @if (parameter.Action is { } action && action.IsAvailable(Node, key))
+        {
+            <button type="button" class="field-action" @onclick="() => State.RunParameterAction(Node.Id, key)">@action.Label</button>
+        }
         @if (parameter.Help is not null)
         {
             <div class="field-help">@parameter.Help</div>

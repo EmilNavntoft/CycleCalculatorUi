@@ -11,7 +11,7 @@ public sealed class SystemDocument
     /// <summary>
     /// 2: controllers select what they measure (<c>controlSignal</c>) instead of having one mode per measured quantity.
     /// </summary>
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -64,6 +64,12 @@ public sealed class NodeModel
 
     /// <summary>Choice parameters such as an operating mode.</summary>
     public Dictionary<string, string> Choices { get; set; } = [];
+
+    /// <summary>
+    /// Embedded data stored next to a parameter under its key, e.g. the whole EN 12900 compressor model chosen from the
+    /// library (JSON), so the document does not depend on the library.
+    /// </summary>
+    public Dictionary<string, string> Texts { get; set; } = [];
 
     /// <summary>Fluid of each stream of the component (one entry for most components, two for heat exchangers).</summary>
     public List<FluidSelection> Fluids { get; set; } = [];
