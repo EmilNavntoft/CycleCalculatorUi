@@ -20,6 +20,15 @@ else
     /// <summary>The node drawn, for symbols that show a setting (a signal operator's operation); null in the palette.</summary>
     [Parameter] public NodeModel? Node { get; set; }
 
+    /// <summary>
+    /// Undoes the canvas's flip and rotation of the symbol (<see cref="Geometry.SymbolTransform"/>) around its centre,
+    /// so text stays upright and reads left to right.
+    /// </summary>
+    private string? UprightTransform => Standalone || Node is null
+        ? null
+        : (Node.FlipHorizontal ? $"translate({Geometry.NodeWidth} 0) scale(-1 1) " : "") +
+          $"rotate({-Node.Rotation} {Geometry.NodeWidth / 2} {Geometry.NodeHeight / 2})";
+
     private string OperationSymbol => Node is null
         ? "f(x)"
         : BuiltInComponents.OperationOf(Node) switch
@@ -153,7 +162,7 @@ else
                     <rect class="body" x="10" y="6" width="76" height="52" rx="6"/>
                     <path class="signal-stem" d="M0 6v52M86 32h10"/>
                     @* Wrapped in <g> because Razor treats a bare <text> in code as a special tag. *@
-                    <g><text class="op-symbol" x="48" y="39">@OperationSymbol</text></g>
+                    <g transform="@UprightTransform"><text class="op-symbol" x="48" y="32">@OperationSymbol</text></g>
                     break;
                 default:
                     <path class="pipe" d="M0 32h24M72 32h24"/>

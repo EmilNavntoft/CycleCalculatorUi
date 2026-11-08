@@ -244,7 +244,7 @@ kbd {
 .glyph-lines .arrow { fill: var(--symbol); stroke: none; }
 .glyph-lines .liquid { fill: var(--liquid); stroke: none; }
 .glyph-lines .signal-stem { stroke: var(--signal); stroke-dasharray: 3 3; }
-.glyph-lines .op-symbol { fill: var(--symbol); stroke: none; font-size: 20px; font-weight: 600; text-anchor: middle; }
+.glyph-lines .op-symbol { fill: var(--symbol); stroke: none; font-size: 20px; font-weight: 600; text-anchor: middle; dominant-baseline: central; }
 
 .node { cursor: move; }
 .node-frame { fill: transparent; stroke: transparent; stroke-width: 1.5; }
