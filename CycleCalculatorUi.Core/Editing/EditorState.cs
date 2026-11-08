@@ -316,8 +316,37 @@ public sealed class EditorState(ComponentCatalog catalog, SolveService solver)
             }
 
             document.Connections.Add(new ConnectionModel { Kind = proposal.Kind, From = proposal.From, To = proposal.To });
+            if (proposal.Kind == ConnectionKind.Signal)
+                SelectQuantityForSource(document, proposal.To);
         });
         return null;
+    }
+
+    /// <summary>
+    /// After connecting a signal input: when the measured quantity it selects cannot be read from the new source and
+    /// only one quantity can (a signal operator's output), selects that one.
+    /// </summary>
+    private void SelectQuantityForSource(SystemDocument document, PortRef input)
+    {
+        if (document.FindNode(input.NodeId) is not { } node || Catalog.Find(node.TypeId) is not { } descriptor ||
+            Measurements.SourceOf(document, Catalog, input) is not { } source)
+            return;
+
+        MeasuredQuantity[] available = Measurements.All.Where(q => q.IsAvailableFrom(source)).ToArray();
+        if (available is not [var only])
+            return;
+
+        // The choice of measured quantity that belongs to this input: per item for repeated inputs.
+        int index = RepeatGroupDescriptor.Parse(input.PortKey).Index;
+        foreach (ParameterDescriptor parameter in descriptor.Parameters.Where(p =>
+                     p.Kind == ParameterKind.Choice && p.Options.Any(o => o.Value == only.Key) &&
+                     p.Options.All(o => Measurements.Find(o.Value) is not null)))
+        {
+            string key = parameter.Group is null ? parameter.Key : RepeatGroupDescriptor.ItemKey(parameter.Key, index);
+            if (parameter.Group is null && index > 0)
+                continue;
+            node.Choices[key] = only.Key;
+        }
     }
 
     public void SetNumber(string nodeId, string key, double? value) =>
@@ -333,7 +362,7 @@ public sealed class EditorState(ComponentCatalog catalog, SolveService solver)
     public void AddGroupItem(string nodeId, string groupKey)
     {
         if (Document.FindNode(nodeId) is not { } node || Catalog.Find(node.TypeId) is not { } descriptor ||
-            descriptor.FindGroup(groupKey) is not { } group || group.Count(node) >= group.MaxCount)
+            descriptor.FindGroup(groupKey) is not { } group || group.IsFixed(node) || group.Count(node) >= group.MaxCount)
             return;
 
         EditNode(nodeId, n =>
@@ -359,7 +388,7 @@ public sealed class EditorState(ComponentCatalog catalog, SolveService solver)
     public void RemoveGroupItem(string nodeId, string groupKey, int index)
     {
         if (Document.FindNode(nodeId) is not { } node || Catalog.Find(node.TypeId) is not { } descriptor ||
-            descriptor.FindGroup(groupKey) is not { } group || group.Count(node) <= group.MinCount ||
+            descriptor.FindGroup(groupKey) is not { } group || group.IsFixed(node) || group.Count(node) <= group.MinCount ||
             index < 0 || index >= group.Count(node))
             return;
 
@@ -385,6 +414,23 @@ public sealed class EditorState(ComponentCatalog catalog, SolveService solver)
             }
 
             n.GroupCounts[groupKey] = count - 1;
+
+            // Connections to the removed port go away; those on later ports follow their port.
+            foreach (PortDescriptor port in descriptor.Ports.Where(p => p.Group == groupKey))
+            {
+                document.Connections.RemoveAll(c => c.Touches(new PortRef(nodeId, RepeatGroupDescriptor.ItemKey(port.Key, index))));
+                foreach (ConnectionModel connection in document.Connections)
+                {
+                    connection.From = Shifted(connection.From, port.Key);
+                    connection.To = Shifted(connection.To, port.Key);
+                }
+            }
+
+            PortRef Shifted(PortRef reference, string portKey) =>
+                reference.NodeId == nodeId && RepeatGroupDescriptor.Parse(reference.PortKey) is var (baseKey, i) &&
+                baseKey == portKey && i > index
+                    ? reference with { PortKey = RepeatGroupDescriptor.ItemKey(portKey, i - 1) }
+                    : reference;
 
             // Study variables on the removed item go away; those on later items follow their item.
             if (document.Study is { } study)
@@ -444,7 +490,26 @@ public sealed class EditorState(ComponentCatalog catalog, SolveService solver)
     {
         if (Document.FindNode(nodeId) is null)
             return;
-        Edit(document => change(document.FindNode(nodeId)!));
+        Edit(document =>
+        {
+            NodeModel node = document.FindNode(nodeId)!;
+            change(node);
+            RemoveConnectionsToMissingPorts(document, node);
+        });
+    }
+
+    /// <summary>
+    /// Removes connections to ports a node no longer has, e.g. the extra inputs of a signal operator switched to an
+    /// operation with a single input.
+    /// </summary>
+    private void RemoveConnectionsToMissingPorts(SystemDocument document, NodeModel node)
+    {
+        if (Catalog.Find(node.TypeId) is not { } descriptor)
+            return;
+        HashSet<string> keys = descriptor.PortsFor(node).Select(p => p.Key).ToHashSet();
+        document.Connections.RemoveAll(c =>
+            (c.From.NodeId == node.Id && !keys.Contains(c.From.PortKey)) ||
+            (c.To.NodeId == node.Id && !keys.Contains(c.To.PortKey)));
     }
 
     private string UniqueName(string prefix)

@@ -82,15 +82,15 @@ public enum ConnectionKind
     /// <summary>Physical fluid connection between two fluid ports.</summary>
     Fluid,
 
-    /// <summary>Read-only measurement from a fluid port (source) to a signal input (target).</summary>
+    /// <summary>Read-only measurement from a fluid port or a signal output (source) to a signal input (target).</summary>
     Signal
 }
 
 public sealed record PortRef(string NodeId, string PortKey);
 
 /// <summary>
-/// A connection between two ports. For signal connections <see cref="From"/> is the measured fluid port
-/// and <see cref="To"/> is the signal input.
+/// A connection between two ports. For signal connections <see cref="From"/> is the measured fluid port or signal
+/// output and <see cref="To"/> is the signal input.
 /// </summary>
 public sealed class ConnectionModel
 {

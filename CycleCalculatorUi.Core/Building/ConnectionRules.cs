@@ -35,6 +35,24 @@ public static class ConnectionRules
             return null;
         }
 
+        if (portA.Kind == PortKind.SignalOutput || portB.Kind == PortKind.SignalOutput)
+        {
+            PortDescriptor other = portA.Kind == PortKind.SignalOutput ? portB : portA;
+            if (other.Kind != PortKind.SignalInput)
+            {
+                reason = other.Kind == PortKind.SignalOutput
+                    ? "Two signal outputs cannot be connected; connect an output to a signal input."
+                    : "A signal output can only be connected to a signal input, e.g. a compressor's measurement input.";
+                return null;
+            }
+
+            if (a.NodeId == b.NodeId)
+            {
+                reason = "A signal operator cannot measure its own output.";
+                return null;
+            }
+        }
+
         if (portA.Kind == PortKind.SignalInput || portB.Kind == PortKind.SignalInput)
         {
             (PortRef source, PortRef input) = portA.Kind == PortKind.SignalInput ? (b, a) : (a, b);
@@ -74,6 +92,7 @@ public static class ConnectionRules
     public static bool IsConnected(SystemDocument document, PortRef port) =>
         document.Connections.Any(c => c.Touches(port));
 
+    /// <summary>The port <paramref name="port"/> refers to, or null when its node does not have it (any more).</summary>
     public static PortDescriptor? Describe(SystemDocument document, ComponentCatalog catalog, PortRef port) =>
-        document.FindNode(port.NodeId) is { } node ? catalog.Find(node.TypeId)?.FindPort(port.PortKey) : null;
+        document.FindNode(port.NodeId) is { } node ? catalog.Find(node.TypeId)?.FindPort(node, port.PortKey) : null;
 }

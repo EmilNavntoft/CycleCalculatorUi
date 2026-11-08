@@ -8,7 +8,10 @@ namespace CycleCalculatorUi.Core.Catalog;
 public enum PortKind
 {
     Fluid,
-    SignalInput
+    SignalInput,
+
+    /// <summary>A computed value other components' signal inputs can measure, e.g. a signal operator's result.</summary>
+    SignalOutput
 }
 
 /// <summary>
@@ -30,10 +33,23 @@ public sealed record PortDescriptor(
     public bool Required(NodeModel node) => IsRequired?.Invoke(node) ?? Kind == PortKind.Fluid;
 
     /// <summary>
-    /// For signal inputs: checks the node a connection measures (owner node, measured node and its descriptor) and
+    /// Key of the <see cref="RepeatGroupDescriptor"/> this port is repeated with: a node then has one port per group
+    /// item, keyed like grouped parameters ("In", "In#2"…) and spread along the edge; see
+    /// <see cref="ComponentDescriptor.PortsFor"/>.
+    /// </summary>
+    public string? Group { get; init; }
+
+    /// <summary>
+    /// For signal inputs: checks what a connection measures (owner node, key of the input on it, and the source) and
     /// returns a problem, or null when the source is acceptable. E.g. a pump envelope position must measure a pump.
     /// </summary>
-    public Func<NodeModel, NodeModel, ComponentDescriptor, string?>? CheckSource { get; init; }
+    public Func<NodeModel, string, SignalSource, string?>? CheckSource { get; init; }
+}
+
+/// <summary>What a signal input is connected to: a fluid port or a signal output of <see cref="Node"/>.</summary>
+public sealed record SignalSource(NodeModel Node, ComponentDescriptor Descriptor, PortDescriptor Port)
+{
+    public bool IsSignalOutput => Port.Kind == PortKind.SignalOutput;
 }
 
 public enum ParameterKind
@@ -80,13 +96,19 @@ public sealed record ParameterDescriptor(string Key, string Label, ParameterKind
 
     /// <summary>
     /// For choices whose sensible options depend on the document, e.g. the quantities a signal input's source can
-    /// provide: the options to show for a node. <see cref="Options"/> stays the full list of valid values.
+    /// provide: the options to show for a node, given the storage key (which tells the item of a repeated group).
+    /// <see cref="Options"/> stays the full list of valid values.
     /// </summary>
-    public Func<NodeModel, SystemDocument, ComponentCatalog, IReadOnlyList<ChoiceOption>>? OptionsFor { get; init; }
+    public Func<NodeModel, string, SystemDocument, ComponentCatalog, IReadOnlyList<ChoiceOption>>? OptionsFor { get; init; }
 
     /// <summary>The options to show for <paramref name="node"/>; see <see cref="OptionsFor"/>.</summary>
     public IReadOnlyList<ChoiceOption> OptionsShown(NodeModel node, SystemDocument document, ComponentCatalog catalog) =>
-        OptionsFor?.Invoke(node, document, catalog) ?? Options;
+        OptionsShown(node, Key, document, catalog);
+
+    /// <summary>The options to show for the value stored under <paramref name="key"/> (e.g. "key#2").</summary>
+    public IReadOnlyList<ChoiceOption> OptionsShown(NodeModel node, string key, SystemDocument document,
+        ComponentCatalog catalog) =>
+        OptionsFor?.Invoke(node, key, document, catalog) ?? Options;
 
     /// <summary>Parameters are hidden and ignored when this returns false, e.g. when another mode is chosen.</summary>
     public Func<NodeModel, bool>? IsActive { get; init; }
@@ -129,6 +151,15 @@ public sealed record RepeatGroupDescriptor(string Key, string ItemLabel)
 
     public string? Help { get; init; }
 
+    /// <summary>
+    /// When this returns a count for a node, the group has exactly that many items and cannot be added to or removed
+    /// from, e.g. a signal operator that applies a constant to a single input.
+    /// </summary>
+    public Func<NodeModel, int?>? FixedCount { get; init; }
+
+    /// <summary>True when <see cref="FixedCount"/> currently decides the number of items of <paramref name="node"/>.</summary>
+    public bool IsFixed(NodeModel node) => FixedCount?.Invoke(node) is not null;
+
     /// <summary>The storage key of a parameter for the item at zero-based <paramref name="index"/>.</summary>
     public static string ItemKey(string parameterKey, int index) =>
         index == 0 ? parameterKey : $"{parameterKey}{Separator}{index + 1}";
@@ -144,7 +175,7 @@ public sealed record RepeatGroupDescriptor(string Key, string ItemLabel)
 
     /// <summary>Number of items a node has, within <see cref="MinCount"/> and <see cref="MaxCount"/>.</summary>
     public int Count(NodeModel node) =>
-        Math.Clamp(node.GroupCounts.GetValueOrDefault(Key, MinCount), MinCount, MaxCount);
+        FixedCount?.Invoke(node) ?? Math.Clamp(node.GroupCounts.GetValueOrDefault(Key, MinCount), MinCount, MaxCount);
 }
 
 /// <summary>One stored value of a parameter: the parameter itself for ungrouped ones, otherwise one group item.</summary>
@@ -184,6 +215,7 @@ public static class Categories
     public const string HeatExchangers = "Heat exchangers";
     public const string Pumps = "Pumps";
     public const string Flow = "Flow";
+    public const string Signals = "Signals";
 }
 
 /// <summary>Everything the editor needs to know about one backend component type.</summary>
@@ -220,6 +252,9 @@ public sealed class ComponentDescriptor
 
     public Func<CycleComponent, string, SignalPort>? GetSignalPort { get; init; }
 
+    /// <summary>The backend output behind a <see cref="PortKind.SignalOutput"/> port.</summary>
+    public Func<CycleComponent, string, SignalOutput>? GetSignalOutput { get; init; }
+
     public Func<CycleComponent, IEnumerable<OutputValue>>? ReadOutputs { get; init; }
 
     /// <summary>Temperatures of both streams along a heat exchanger, read after a solve; null for other components.
@@ -228,7 +263,56 @@ public sealed class ComponentDescriptor
 
     public EnergyKind EnergyKind { get; init; } = EnergyKind.None;
 
-    public PortDescriptor? FindPort(string key) => Ports.FirstOrDefault(port => port.Key == key);
+    /// <summary>
+    /// Finds a port by key. Keys of repeated ports ("In#2") resolve to that item even when a node has fewer items;
+    /// use <see cref="FindPort(NodeModel, string)"/> to check a node actually has the port.
+    /// </summary>
+    public PortDescriptor? FindPort(string key)
+    {
+        if (Ports.FirstOrDefault(port => port.Key == key && port.Group is null) is { } port)
+            return port;
+        (string baseKey, int index) = RepeatGroupDescriptor.Parse(key);
+        return Ports.FirstOrDefault(p => p.Key == baseKey && p.Group is not null) is { } template
+            ? GroupPort(template, index, index + 1)
+            : null;
+    }
+
+    /// <summary>The port <paramref name="key"/> if <paramref name="node"/> has it.</summary>
+    public PortDescriptor? FindPort(NodeModel node, string key) => PortsFor(node).FirstOrDefault(p => p.Key == key);
+
+    /// <summary>The ports of a node, with repeated ports expanded per group item.</summary>
+    public IEnumerable<PortDescriptor> PortsFor(NodeModel node)
+    {
+        foreach (PortDescriptor port in Ports)
+        {
+            if (port.Group is null || FindGroup(port.Group) is not { } group)
+            {
+                yield return port;
+                continue;
+            }
+
+            int count = group.Count(node);
+            for (int index = 0; index < count; index++)
+                yield return GroupPort(port, index, count);
+        }
+    }
+
+    /// <summary>
+    /// Item <paramref name="index"/> of a repeated port, spread evenly along the edge of the template's anchor
+    /// (left/right edges spread vertically, top/bottom horizontally).
+    /// </summary>
+    private static PortDescriptor GroupPort(PortDescriptor template, int index, int count)
+    {
+        double along = (index + 1.0) / (count + 1);
+        bool vertical = template.X is 0 or 1;
+        return template with
+        {
+            Key = RepeatGroupDescriptor.ItemKey(template.Key, index),
+            Label = $"{template.Label} {index + 1}",
+            X = vertical ? template.X : along,
+            Y = vertical ? along : template.Y
+        };
+    }
 
     /// <summary>Finds a parameter by key. Keys of repeated group items ("key#2") resolve to their parameter.</summary>
     public ParameterDescriptor? FindParameter(string key) =>

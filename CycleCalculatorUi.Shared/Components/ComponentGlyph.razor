@@ -1,3 +1,4 @@
+@using CycleCalculator.CycleModel.Model.Control
 @* Component symbols on a 96×64 grid. Pipe stubs end exactly at the port anchors in BuiltInComponents. *@
 @if (Standalone)
 {
@@ -15,6 +16,22 @@ else
 
     /// <summary>True to render a self-contained &lt;svg&gt; (palette, inspector); false inside the canvas.</summary>
     [Parameter] public bool Standalone { get; set; }
+
+    /// <summary>The node drawn, for symbols that show a setting (a signal operator's operation); null in the palette.</summary>
+    [Parameter] public NodeModel? Node { get; set; }
+
+    private string OperationSymbol => Node is null
+        ? "f(x)"
+        : BuiltInComponents.OperationOf(Node) switch
+        {
+            SignalOperation.Minimum => "min",
+            SignalOperation.Maximum => "max",
+            SignalOperation.Mean => "x̄",
+            SignalOperation.Add => "+c",
+            SignalOperation.Subtract => "−c",
+            SignalOperation.Multiply => "×c",
+            _ => "÷c"
+        };
 
     /// <summary>Flow arrowhead with its tip at (x, y), pointing r/l/u/d.</summary>
     private static string Arrow(int x, int y, char dir, int length = 8)
@@ -131,6 +148,12 @@ else
                     <path class="liquid" d="M30.5 40h35v8a13.5 13.5 0 0 1-13.5 13.5h-8A13.5 13.5 0 0 1 30.5 48z"/>
                     <path class="accent" d="M34 40h28"/>
                     <path class="arrow" d="@(Arrow(19, 32, 'r') + Arrow(85, 16, 'r') + Arrow(85, 48, 'r'))"/>
+                    break;
+                case "SignalOperator":
+                    <rect class="body" x="10" y="6" width="76" height="52" rx="6"/>
+                    <path class="signal-stem" d="M0 6v52M86 32h10"/>
+                    @* Wrapped in <g> because Razor treats a bare <text> in code as a special tag. *@
+                    <g><text class="op-symbol" x="48" y="39">@OperationSymbol</text></g>
                     break;
                 default:
                     <path class="pipe" d="M0 32h24M72 32h24"/>

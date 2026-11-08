@@ -72,7 +72,7 @@ public sealed class ModelBuilder(ComponentCatalog catalog)
                         node.Id, StartGuesses.IssueKey(i)));
             }
 
-            foreach (PortDescriptor port in descriptor.Ports.Where(port => port.Required(node)))
+            foreach (PortDescriptor port in descriptor.PortsFor(node).Where(port => port.Required(node)))
             {
                 if (!ConnectionRules.IsConnected(document, new PortRef(node.Id, port.Key)))
                 {
@@ -93,14 +93,20 @@ public sealed class ModelBuilder(ComponentCatalog catalog)
             }
             else if (connection.Kind == ConnectionKind.Signal &&
                      document.FindNode(connection.To.NodeId) is { } target &&
-                     document.FindNode(connection.From.NodeId) is { } measured &&
-                     catalog.Find(measured.TypeId) is { } measuredDescriptor &&
-                     catalog.Find(target.TypeId)?.FindPort(connection.To.PortKey)?.CheckSource is { } check &&
-                     check(target, measured, measuredDescriptor) is { } problem)
+                     Measurements.SourceOf(document, catalog, connection.To) is { } source &&
+                     catalog.Find(target.TypeId)?.FindPort(target, connection.To.PortKey)?.CheckSource is { } check &&
+                     check(target, connection.To.PortKey, source) is { } problem)
             {
                 issues.Add(new ValidationIssue(IssueSeverity.Error, $"{target.Name}: {problem}", target.Id,
                     PortKey: connection.To.PortKey, ConnectionId: connection.Id));
             }
+        }
+
+        if (FindSignalLoop(document, catalog) is { } loop)
+        {
+            issues.Add(new ValidationIssue(IssueSeverity.Error,
+                $"The signal operators {string.Join(" → ", loop.Select(n => n.Name))} feed each other in a loop. " +
+                "Remove one of their connections.", loop[0].Id));
         }
 
         foreach (FluidCircuit circuit in FluidCircuitResolver.Resolve(document, catalog).Where(c => c.HasConflict))
@@ -188,19 +194,74 @@ public sealed class ModelBuilder(ComponentCatalog catalog)
     private static void Connect(ConnectionModel connection, Dictionary<string, CycleComponent> byNode,
         Dictionary<string, ComponentDescriptor> descriptors)
     {
-        Port source = descriptors[connection.From.NodeId].GetPort(byNode[connection.From.NodeId], connection.From.PortKey);
+        CycleComponent from = byNode[connection.From.NodeId];
+        ComponentDescriptor fromDescriptor = descriptors[connection.From.NodeId];
         CycleComponent target = byNode[connection.To.NodeId];
         ComponentDescriptor targetDescriptor = descriptors[connection.To.NodeId];
 
         if (connection.Kind == ConnectionKind.Fluid)
         {
-            source.ConnectTo(targetDescriptor.GetPort(target, connection.To.PortKey));
+            fromDescriptor.GetPort(from, connection.From.PortKey)
+                .ConnectTo(targetDescriptor.GetPort(target, connection.To.PortKey));
             return;
         }
 
         SignalPort input = targetDescriptor.GetSignalPort?.Invoke(target, connection.To.PortKey)
                            ?? throw new InvalidOperationException($"{target.Name} has no signal input '{connection.To.PortKey}'.");
-        input.ConnectTo(source.SignalTapIn);
+        if (fromDescriptor.FindPort(connection.From.PortKey)?.Kind == PortKind.SignalOutput)
+        {
+            SignalOutput output = fromDescriptor.GetSignalOutput?.Invoke(from, connection.From.PortKey)
+                                  ?? throw new InvalidOperationException($"{from.Name} has no signal output '{connection.From.PortKey}'.");
+            input.ConnectTo(output);
+        }
+        else
+        {
+            input.ConnectTo(fromDescriptor.GetPort(from, connection.From.PortKey).SignalTapIn);
+        }
+    }
+
+    /// <summary>
+    /// Nodes whose signal outputs feed each other in a loop (first node repeated at the end), or null. The backend
+    /// would only notice while evaluating.
+    /// </summary>
+    public static IReadOnlyList<NodeModel>? FindSignalLoop(SystemDocument document, ComponentCatalog catalog)
+    {
+        // Edge: node owning a signal output → node whose input it feeds.
+        ILookup<string, string> feeds = document.Connections
+            .Where(c => c.Kind == ConnectionKind.Signal &&
+                        ConnectionRules.Describe(document, catalog, c.From)?.Kind == PortKind.SignalOutput)
+            .ToLookup(c => c.From.NodeId, c => c.To.NodeId);
+
+        Dictionary<string, int> state = []; // 1: on the current path, 2: done
+        List<string> path = [];
+
+        List<string>? Visit(string nodeId)
+        {
+            if (state.GetValueOrDefault(nodeId) == 2)
+                return null;
+            if (state.GetValueOrDefault(nodeId) == 1)
+                return [.. path.Skip(path.IndexOf(nodeId)), nodeId];
+
+            state[nodeId] = 1;
+            path.Add(nodeId);
+            foreach (string next in feeds[nodeId])
+            {
+                if (Visit(next) is { } loop)
+                    return loop;
+            }
+
+            path.RemoveAt(path.Count - 1);
+            state[nodeId] = 2;
+            return null;
+        }
+
+        foreach (IGrouping<string, string> start in feeds)
+        {
+            if (Visit(start.Key) is { } loop)
+                return loop.Select(document.FindNode).OfType<NodeModel>().ToList();
+        }
+
+        return null;
     }
 
     private static void ApplyGuesses(NodeModel node, CycleComponent component, ComponentDescriptor descriptor,

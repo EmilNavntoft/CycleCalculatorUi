@@ -31,7 +31,8 @@ public static class BuiltInComponents
         Pipe(),
         Split(),
         Merge(),
-        Receiver()
+        Receiver(),
+        SignalOperator()
     ];
 
     private static bool ChoiceIs(NodeModel node, string key, params string[] values) =>
@@ -475,6 +476,128 @@ public static class BuiltInComponents
         GetPort = Typed.Ports<Receiver>(("Inlet", r => r.Inlet), ("OutletGas", r => r.OutletGas),
             ("OutletLiquid", r => r.OutletLiquid))
     };
+
+    /// <summary>Choice of a signal operator's operation; values are <see cref="SignalOperation"/> names.</summary>
+    public const string OperationKey = "operation";
+
+    /// <summary>The operation a signal operator node has selected.</summary>
+    public static SignalOperation OperationOf(NodeModel node) =>
+        node.Choices.TryGetValue(OperationKey, out string? value) && Enum.TryParse(value, out SignalOperation operation)
+            ? operation
+            : SignalOperation.Minimum;
+
+    public static ComponentDescriptor SignalOperator()
+    {
+        const string Group = "inputs";
+        const string InputKey = "In";
+        const string InputSignalKey = "inputSignal";
+        static bool UsesConstant(NodeModel node) => OperationOf(node).UsesConstant();
+
+        // The measured quantity of input `index`, falling back to superheat.
+        static MeasuredQuantity InputQuantity(NodeModel node, int index) =>
+            (node.Choices.TryGetValue(RepeatGroupDescriptor.ItemKey(InputSignalKey, index), out string? key)
+                ? Measurements.Find(key)
+                : null) ?? Measurements.Superheat;
+
+        static ChoiceOption Option(MeasuredQuantity quantity) => new(quantity.Key, quantity.Label);
+
+        static string Unit(SignalOperator op) =>
+            op.Operation is SignalOperation.Multiply or SignalOperation.Divide ||
+            op.Measurements.Select(m => Measurements.For(m)?.Unit).Distinct().ToArray() is not [{ } unit]
+                ? ""
+                : unit;
+
+        return new ComponentDescriptor
+        {
+            TypeId = nameof(CycleCalculator.CycleModel.Model.SignalOperator),
+            DisplayName = "Signal operator",
+            Category = Categories.Signals,
+            NamePrefix = "Op",
+            Description = "Combines measured values into one signal that controllers can follow, e.g. the minimum " +
+                          "superheat of several evaporators. Minimum, maximum and mean combine two or more inputs; " +
+                          "add, subtract, multiply and divide apply a constant to one input. Connect a controller's " +
+                          "signal input to the output and let it measure the operator output.",
+            Streams = [],
+            Ports =
+            [
+                new PortDescriptor(InputKey, "Input", PortKind.SignalInput, PortDirection.Undefined, 0, 0, 0.5)
+                {
+                    Group = Group,
+                    IsRequired = _ => true,
+                    CheckSource = (node, inputKey, source) =>
+                        InputQuantity(node, RepeatGroupDescriptor.Parse(inputKey).Index).Problem(source)
+                },
+                new PortDescriptor("Out", "Output", PortKind.SignalOutput, PortDirection.Undefined, 0, 1, 0.5)
+            ],
+            RepeatGroups =
+            [
+                new RepeatGroupDescriptor(Group, "Input")
+                {
+                    MinCount = 2, MaxCount = 6,
+                    FixedCount = node => UsesConstant(node) ? 1 : null,
+                    Help = "Each input is a signal port on the left of the symbol. Connect it to the fluid port to " +
+                           "measure, or to another operator's output."
+                }
+            ],
+            Parameters =
+            [
+                new ParameterDescriptor(OperationKey, "Operation", ParameterKind.Choice)
+                {
+                    DefaultChoice = nameof(SignalOperation.Minimum),
+                    Options =
+                    [
+                        new ChoiceOption(nameof(SignalOperation.Minimum), "Minimum"),
+                        new ChoiceOption(nameof(SignalOperation.Maximum), "Maximum"),
+                        new ChoiceOption(nameof(SignalOperation.Mean), "Mean"),
+                        new ChoiceOption(nameof(SignalOperation.Add), "Add a constant"),
+                        new ChoiceOption(nameof(SignalOperation.Subtract), "Subtract a constant"),
+                        new ChoiceOption(nameof(SignalOperation.Multiply), "Multiply by a constant"),
+                        new ChoiceOption(nameof(SignalOperation.Divide), "Divide by a constant")
+                    ]
+                },
+                new ParameterDescriptor("constant", "Constant", ParameterKind.Number)
+                {
+                    DefaultNumber = 1, IsActive = UsesConstant,
+                    Help = "Applied to the single input, in the input's unit for add and subtract."
+                },
+                new ParameterDescriptor(InputSignalKey, "Measured quantity", ParameterKind.Choice)
+                {
+                    Group = Group,
+                    DefaultChoice = Measurements.Superheat.Key,
+                    Options = Measurements.All.Select(Option).ToArray(),
+                    OptionsFor = (node, key, document, catalog) =>
+                    {
+                        int index = RepeatGroupDescriptor.Parse(key).Index;
+                        return Measurements.AvailableFor(node, RepeatGroupDescriptor.ItemKey(InputKey, index),
+                            InputQuantity(node, index).Key, document, catalog).Select(Option).ToArray();
+                    },
+                    Help = "What this input measures at the connected port, or the output of another operator."
+                }
+            ],
+            Create = c => new SignalOperator(c.Name, OperationOf(c.Node),
+                Enumerable.Range(0, c.Count(Group))
+                    .Select(index => (Measurements.Find(c.Choice(RepeatGroupDescriptor.ItemKey(InputSignalKey, index)))
+                                      ?? Measurements.Superheat).ToBackend())
+                    .ToList(),
+                UsesConstant(c.Node) ? c.Number("constant") : 0),
+            GetPort = (component, key) =>
+                throw new KeyNotFoundException($"The signal operator '{component.Name}' has no fluid port '{key}'."),
+            GetSignalPort = (component, key) =>
+                RepeatGroupDescriptor.Parse(key) is (InputKey, var index) &&
+                index < ((SignalOperator)component).Inputs.Count
+                    ? ((SignalOperator)component).Inputs[index]
+                    : throw new KeyNotFoundException($"The signal operator '{component.Name}' has no input '{key}'."),
+            GetSignalOutput = (component, key) => key == "Out"
+                ? ((SignalOperator)component).Output
+                : throw new KeyNotFoundException($"The signal operator '{component.Name}' has no output '{key}'."),
+            ReadOutputs = Typed.Outputs<SignalOperator>(op =>
+            [
+                new OutputValue("Output", op.Value, Unit(op)),
+                .. op.Measurements.Select((measurement, i) => new OutputValue($"Input {i + 1}",
+                    op.InputValues is { } values ? values[i] : null, Measurements.For(measurement)?.Unit ?? ""))
+            ])
+        };
+    }
 
     public static ComponentDescriptor En12900Compressor()
     {
@@ -965,8 +1088,8 @@ public static class BuiltInComponents
         new("Signal", "Measurement", PortKind.SignalInput, PortDirection.Undefined, 0, 0.5, 0)
         {
             IsRequired = controlled,
-            CheckSource = (node, measured, descriptor) =>
-                controlled(node) ? SelectedQuantity(node, defaultSignal).Problem(measured, descriptor) : null
+            CheckSource = (node, _, source) =>
+                controlled(node) ? SelectedQuantity(node, defaultSignal).Problem(source) : null
         };
 
     /// <summary>Inlet and outlet in line, with a signal input on top for capacity control.</summary>
@@ -988,13 +1111,13 @@ public static class BuiltInComponents
             {
                 DefaultChoice = defaultSignal,
                 Options = Measurements.All.Select(Option).ToArray(),
-                OptionsFor = (node, document, catalog) => Measurements
-                    .AvailableFor(node, SelectedQuantity(node, defaultSignal).Key, document, catalog)
+                OptionsFor = (node, _, document, catalog) => Measurements
+                    .AvailableFor(node, "Signal", SelectedQuantity(node, defaultSignal).Key, document, catalog)
                     .Select(Option).ToArray(),
                 IsActive = controlled,
                 Nested = true,
-                Help = "What the signal input measures: a state of the connected port, or a value the connected " +
-                       "component provides, e.g. a pump's envelope position."
+                Help = "What the signal input measures: a state of the connected port, a value the connected " +
+                       "component provides, e.g. a pump's envelope position, or the output of a signal operator."
             },
             .. Measurements.All.Select(quantity => new ParameterDescriptor(quantity.SetpointKey,
                 $"{quantity.Label} setpoint", ParameterKind.Number)

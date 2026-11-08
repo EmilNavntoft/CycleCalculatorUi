@@ -4,7 +4,7 @@
     {
         IReadOnlyList<ValidationIssue> issues = State.IssuesFor(node.Id);
         <div class="inspector-title">
-            <ComponentGlyph TypeId="@node.TypeId" Standalone="true"/>
+            <ComponentGlyph TypeId="@node.TypeId" Node="node" Standalone="true"/>
             <div>
                 <div class="eyebrow">@descriptor.DisplayName</div>
                 <input class="name-input" value="@node.Name" aria-label="Component name"
@@ -64,7 +64,7 @@
                             <fieldset class="repeat-item" @key="(node.Id, groupKey, index)">
                                 <legend>
                                     <span>@group.ItemLabel @(index + 1)</span>
-                                    @if (count > group.MinCount)
+                                    @if (count > group.MinCount && !group.IsFixed(node))
                                     {
                                         <button type="button" class="ghost danger small" title="Remove @group.ItemLabel.ToLowerInvariant() @(index + 1)"
                                                 @onclick="() => State.RemoveGroupItem(node.Id, groupKey, index)">Remove</button>
@@ -78,7 +78,7 @@
                                 }
                             </fieldset>
                         }
-                        @if (count < group.MaxCount)
+                        @if (count < group.MaxCount && !group.IsFixed(node))
                         {
                             <button type="button" class="ghost add-item" title="Adds a copy of the last @group.ItemLabel.ToLowerInvariant()"
                                     @onclick="() => State.AddGroupItem(node.Id, groupKey)">+ Add @group.ItemLabel.ToLowerInvariant()</button>
@@ -92,6 +92,8 @@
             </section>
         }
 
+        @if (descriptor.Streams.Count > 0)
+        {
         <section class="inspector-section">
             <h3>Fluid</h3>
             @for (int stream = 0; stream < descriptor.Streams.Count; stream++)
@@ -103,6 +105,7 @@
             }
             <div class="field-help">Applies to every component connected to this @(descriptor.Streams.Count > 1 ? "stream" : "component").</div>
         </section>
+        }
 
         @if (EnergyBalance.DescribeAuto(State.Document, State.Catalog, node) is var auto && (auto is not null || node.EnergyRole != EnergyRole.Auto))
         {

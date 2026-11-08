@@ -244,6 +244,7 @@ kbd {
 .glyph-lines .arrow { fill: var(--symbol); stroke: none; }
 .glyph-lines .liquid { fill: var(--liquid); stroke: none; }
 .glyph-lines .signal-stem { stroke: var(--signal); stroke-dasharray: 3 3; }
+.glyph-lines .op-symbol { fill: var(--symbol); stroke: none; font-size: 20px; font-weight: 600; text-anchor: middle; }
 
 .node { cursor: move; }
 .node-frame { fill: transparent; stroke: transparent; stroke-width: 1.5; }
@@ -259,6 +260,7 @@ kbd {
 .port.connected { fill: var(--symbol); }
 .port.signal { stroke: var(--signal); stroke-dasharray: 2 2; }
 .port.signal.connected { fill: var(--signal); stroke-dasharray: none; }
+.port.signal.output { stroke-dasharray: none; }
 .port.missing { stroke: var(--danger); stroke-width: 2.2; }
 .port:hover, .port.is-target { fill: var(--accent); stroke: var(--accent); r: 7px; }
 .port.is-source { fill: var(--accent); stroke: var(--accent); }

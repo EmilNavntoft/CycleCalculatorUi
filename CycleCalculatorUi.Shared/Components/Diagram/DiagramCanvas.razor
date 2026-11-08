@@ -54,17 +54,17 @@
                transform="translate(@Geometry.F(node.X) @Geometry.F(node.Y))">
                 <g transform="@Geometry.SymbolTransform(node)">
                     <rect class="node-frame" x="-6" y="-6" width="@(Geometry.NodeWidth + 12)" height="@(Geometry.NodeHeight + 12)" rx="8"/>
-                    <ComponentGlyph TypeId="@node.TypeId"/>
+                    <ComponentGlyph TypeId="@node.TypeId" Node="node"/>
                     @if (descriptor is not null)
                     {
-                        foreach (PortDescriptor port in descriptor.Ports)
+                        foreach (PortDescriptor port in descriptor.PortsFor(node))
                         {
                             Geometry.Point at = Geometry.Local(port);
                             Geometry.Point dir = Geometry.LocalDirection(port);
                             PortRef reference = new(node.Id, port.Key);
                             bool connected = ConnectionRules.IsConnected(State.Document, reference);
                             bool missing = issuePorts.Contains((node.Id, port.Key));
-                            <circle class="port @(port.Kind == PortKind.SignalInput ? "signal" : "fluid") @(connected ? "connected" : "") @(missing ? "missing" : "")"
+                            <circle class="port @PortClass(port) @(connected ? "connected" : "") @(missing ? "missing" : "")"
                                     cx="@Geometry.F(at.X)" cy="@Geometry.F(at.Y)" r="5"
                                     data-port-node="@node.Id" data-port-key="@port.Key"
                                     data-dir="@($"{dir.X},{dir.Y}")">
@@ -172,13 +172,25 @@
     private static string PointsAttribute(ConnectionModel connection) =>
         connection.Points is null ? "" : string.Join(" ", connection.Points.Select(p => $"{Geometry.F(p.X)},{Geometry.F(p.Y)}"));
 
+    private static string PortClass(PortDescriptor port) => port.Kind switch
+    {
+        PortKind.SignalInput => "signal",
+        PortKind.SignalOutput => "signal output",
+        _ => "fluid"
+    };
+
     private static string FluidClass(string fluid) => "fluid-" + new string(fluid.Where(char.IsLetterOrDigit).ToArray());
 
     private string PortTooltip(NodeModel node, PortDescriptor port, SolveResult? result)
     {
         string title = $"{node.Name} · {port.Label}";
         if (port.Kind == PortKind.SignalInput)
-            return title + " (signal input: connect to a fluid port to measure it)";
+            return title + " (signal input: connect to a fluid port or a signal operator's output to measure it)";
+        if (port.Kind == PortKind.SignalOutput)
+            return title + " (signal output: connect to a controller's signal input)" +
+                   (State.Result?.Outputs.GetValueOrDefault(node.Id)?.FirstOrDefault() is { Value: { } outputValue } output
+                       ? $"\n= {Format.Number(outputValue)} {output.Unit}".TrimEnd()
+                       : "");
         return result?.Port(node.Id, port.Key) is { } value
             ? $"{title}\n{MassFlowLine(new PortRef(node.Id, port.Key), value)}\np = {Format.Pressure(value.Pressure)} bar\n" +
               $"T = {Format.Temperature(value.Temperature)} °C\nh = {Format.Enthalpy(value.Enthalpy)} kJ/kg"
