@@ -4,6 +4,9 @@
 @inject EditorState State
 @inject IFileService Files
 @inject IDraftStore Drafts
+@inject ExampleLibrary Examples
+@using Microsoft.Extensions.Logging
+@inject ILogger<Editor> Log
 
 <PageTitle>@State.Document.Name · Cycle Calculator</PageTitle>
 
@@ -42,9 +45,9 @@
                     disabled="@(State.Result is not { HasResults: true })" @onclick="ExportCsvAsync">Export CSV</button>
             <select @key="_exampleKey" class="examples" aria-label="Open example" @onchange="OpenExample">
                 <option value="" disabled selected>Open example…</option>
-                @for (int i = 0; i < ExampleSystems.All.Count; i++)
+                @foreach (ExampleSystem example in Examples.Examples)
                 {
-                    <option value="@i">@ExampleSystems.All[i].Title</option>
+                    <option value="@example.File">@example.Title</option>
                 }
             </select>
         </div>
@@ -98,10 +101,9 @@
                 <div class="empty-state">
                     <strong>Start a new system</strong>
                     <span>Drag components from the library, or open an example:</span>
-                    @for (int i = 0; i < ExampleSystems.All.Count; i++)
+                    @foreach (ExampleSystem example in Examples.Examples)
                     {
-                        int index = i;
-                        <button type="button" class="link" @onclick="() => LoadExample(index)">@ExampleSystems.All[i].Title</button>
+                        <button type="button" class="link" @onclick="() => LoadExample(example)">@example.Title</button>
                     }
                 </div>
             }
@@ -157,9 +159,10 @@
                 }
             }
         }
-        catch (Exception ex) when (ex is InvalidDataException or IOException or JSException)
+        catch (Exception ex) when (ex is InvalidDataException or IOException or JSException or JSDisconnectedException
+                                       or TaskCanceledException or ObjectDisposedException)
         {
-            // An unreadable draft is not worth bothering the user with.
+            // An unreadable draft, or a browser that left meanwhile, is not worth bothering the user with.
         }
 
         _draftLoaded = true;
@@ -212,21 +215,35 @@
             using StreamReader reader = new(stream);
             LoadFile(e.File.Name, await reader.ReadToEndAsync());
         }
-        catch (IOException ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            // Anything thrown here would end the user's whole session (circuit), so report it instead.
+            Log.LogError(ex, "Could not read uploaded file {File}", e.File.Name);
             ShowMessage($"Could not read {e.File.Name}: {ex.Message}");
         }
     }
 
     private void LoadFile(string name, string content)
     {
+        SystemDocument document;
         try
         {
-            State.Load(DocumentSerializer.Deserialize(content));
-            _canvas?.RequestFit();
+            document = DocumentSerializer.Deserialize(content);
         }
         catch (InvalidDataException ex)
         {
+            ShowMessage($"Could not open {name}: {ex.Message}");
+            return;
+        }
+
+        try
+        {
+            State.Load(document);
+            _canvas?.RequestFit();
+        }
+        catch (Exception ex)
+        {
+            Log.LogError(ex, "Could not load {File}", name);
             ShowMessage($"Could not open {name}: {ex.Message}");
         }
     }
@@ -308,14 +325,15 @@
 
     private void OpenExample(ChangeEventArgs e)
     {
-        if (int.TryParse(e.Value?.ToString(), out int index))
-            LoadExample(index);
+        // Looked up by file: the folder may have changed since the list was shown.
+        if (Examples.Examples.FirstOrDefault(example => example.File == e.Value?.ToString()) is { } chosen)
+            LoadExample(chosen);
         _exampleKey++; // re-create the select so it shows the placeholder again
     }
 
-    private void LoadExample(int index)
+    private void LoadExample(ExampleSystem example)
     {
-        State.Load(ExampleSystems.All[index].Create());
+        State.Load(example.Create());
         _canvas?.RequestFit();
     }
 

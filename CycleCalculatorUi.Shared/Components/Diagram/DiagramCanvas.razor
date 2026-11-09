@@ -153,8 +153,10 @@
         if (firstRender)
         {
             _self = DotNetObjectReference.Create(this);
-            _module = await Js.InvokeAsync<IJSObjectReference>("import", "./_content/CycleCalculatorUi.Shared/diagram.js");
-            _handle = await _module.InvokeAsync<IJSObjectReference>("init", _svg, _self);
+            IJSObjectReference module = await Js.InvokeAsync<IJSObjectReference>("import", "./_content/CycleCalculatorUi.Shared/diagram.js");
+            _handle = await module.InvokeAsync<IJSObjectReference>("init", _svg, _self);
+            // Set only once init is done: renders while it runs must not call into the script without a handle.
+            _module = module;
         }
         else if (_module is not null)
         {

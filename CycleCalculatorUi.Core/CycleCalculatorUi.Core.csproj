@@ -11,6 +11,11 @@
         <None Include="Compressors\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"/>
     </ItemGroup>
 
+    <!-- The example systems that ship with the program (ExampleLibrary.ShippedDirectory). -->
+    <ItemGroup>
+        <None Include="Examples\**\*.cycle.json;Examples\README.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"/>
+    </ItemGroup>
+
     <ItemGroup>
         <ProjectReference Include="..\CycleCalculator\CycleCalculator\CycleCalculator.csproj"/>
     </ItemGroup>

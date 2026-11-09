@@ -30,7 +30,7 @@ public class SecondaryFlowProbe
             }
         }
 
-        SystemDocument example = ExampleSystems.EjectorHeatPump();
+        SystemDocument example = ShippedExamples.EjectorHeatPump();
         yield return ("EjectorHeatPump", example);
         foreach (double sinkOut in new[] { 50.0, 60.0, 70.0, 90.0 })
         foreach (double ua in new[] { 10.0, 30.0, 80.0 })

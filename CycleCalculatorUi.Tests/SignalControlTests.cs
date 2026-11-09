@@ -40,7 +40,7 @@ public class SignalControlTests
     [Test]
     public void Format1File_LoadsWithTheSameSettingsAsTheCurrentExample()
     {
-        SystemDocument current = ExampleSystems.EjectorHeatPump();
+        SystemDocument current = ShippedExamples.EjectorHeatPump();
         NodeModel ihx = current.Nodes.Single(n => n.TypeId == "FixedEfficiencyHeatExchanger");
         current.Study = new StudyDefinition
         {

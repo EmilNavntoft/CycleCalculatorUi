@@ -13,8 +13,12 @@ export function downloadText(name, content) {
 }
 
 // Storage can be unavailable (private windows, blocked site data); the editor works without a draft.
+// Returned as bytes so .NET reads it as a stream: one SignalR message from the browser may be at most 32 KB,
+// and documents with embedded compressor models are larger.
 export function loadDraft(key) {
-    try { return localStorage.getItem(key); } catch { return null; }
+    let text = null;
+    try { text = localStorage.getItem(key); } catch { /* ignore */ }
+    return text === null ? null : new TextEncoder().encode(text);
 }
 
 export function saveDraft(key, content) {

@@ -14,7 +14,7 @@ public class PhDiagramTests
     [Test]
     public void WithoutResult_DrawsDomeAndIsothermsButNoStates()
     {
-        SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
+        SystemDocument document = ShippedExamples.TwoStageWithParallelCompressor();
         IReadOnlyList<PhChart> charts = PhDiagramBuilder.Build(document, ComponentCatalog.Default, null);
 
         PhChart chart = charts.Single();
@@ -30,7 +30,7 @@ public class PhDiagramTests
     [Test]
     public async Task WithResult_PlotsEveryPortStateInsideTheAxes()
     {
-        SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
+        SystemDocument document = ShippedExamples.TwoStageWithParallelCompressor();
         SolveResult result = await new SolveService(ComponentCatalog.Default).SolveAsync(document);
         Assert.That(result.Success, Is.True, result.Message);
 
@@ -44,7 +44,7 @@ public class PhDiagramTests
     [Test]
     public void ZoomedView_IsUsedAndShowsFinerIsotherms()
     {
-        SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
+        SystemDocument document = ShippedExamples.TwoStageWithParallelCompressor();
         PhChart full = PhDiagramBuilder.Build(document, ComponentCatalog.Default, null).Single();
         Assert.That(full.IsZoomed, Is.False);
 
@@ -66,7 +66,7 @@ public class PhDiagramTests
     [Test]
     public void ZoomedView_IsKeptAboveTheTriplePointAndNotFarBeyondTheDiagram()
     {
-        SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
+        SystemDocument document = ShippedExamples.TwoStageWithParallelCompressor();
         PhChart chart = PhDiagramBuilder.Build(document, ComponentCatalog.Default, null,
             new Dictionary<string, PhView> { [CoolPropFluids.CarbonDioxide] = new(-1e6, 1e6, 1e-6, 1e6) }).Single();
 
@@ -82,7 +82,7 @@ public class PhDiagramTests
     [TestCase(CoolPropFluids.R134a)]
     public void OtherFluids_DrawDomeAndIsotherms(string fluid)
     {
-        SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
+        SystemDocument document = ShippedExamples.TwoStageWithParallelCompressor();
         foreach (NodeModel node in document.Nodes)
             for (int i = 0; i < node.Fluids.Count; i++)
                 node.Fluids[i] = new FluidSelection(fluid, CoolPropBackends.HEOS);
@@ -96,7 +96,7 @@ public class PhDiagramTests
     [Test]
     public void UnknownFluid_ReportsErrorInsteadOfThrowing()
     {
-        SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
+        SystemDocument document = ShippedExamples.TwoStageWithParallelCompressor();
         foreach (NodeModel node in document.Nodes)
             for (int i = 0; i < node.Fluids.Count; i++)
                 node.Fluids[i] = new FluidSelection("NotAFluid", CoolPropBackends.HEOS);

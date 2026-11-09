@@ -1,6 +1,7 @@
 using CycleCalculatorUi.Core.Catalog;
 using CycleCalculatorUi.Core.Solving;
 using CycleCalculatorUi.Core.Editing;
+using CycleCalculatorUi.Core.Examples;
 using CycleCalculatorUi.Shared.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -14,9 +15,14 @@ public static class ServiceCollectionExtensions
     /// Folder of EN 12900 compressor model files; defaults to the collection shipped with the program
     /// (<see cref="CompressorLibrary.ShippedDirectory"/>).
     /// </param>
+    /// <param name="exampleDirectory">
+    /// Folder of example <c>.cycle.json</c> files; defaults to the examples shipped with the program
+    /// (<see cref="ExampleLibrary.ShippedDirectory"/>).
+    /// </param>
     public static IServiceCollection AddCycleEditor(this IServiceCollection services, SolveOptions? solveOptions = null,
-        string? compressorLibraryDirectory = null)
+        string? compressorLibraryDirectory = null, string? exampleDirectory = null)
     {
+        services.AddSingleton(_ => new ExampleLibrary(exampleDirectory ?? ExampleLibrary.ShippedDirectory));
         services.AddSingleton(_ => new CompressorLibrary(compressorLibraryDirectory ?? CompressorLibrary.ShippedDirectory));
         services.AddSingleton(sp => ComponentCatalog.WithLibrary(sp.GetRequiredService<CompressorLibrary>()));
         services.AddSingleton(sp => new SolveService(sp.GetRequiredService<ComponentCatalog>(), solveOptions));

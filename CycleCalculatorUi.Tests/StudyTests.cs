@@ -14,12 +14,12 @@ public class EnergyBalanceTests
     private readonly SolveService _service = new(ComponentCatalog.Default);
 
     public static IEnumerable<TestCaseData> Examples() =>
-        ExampleSystems.All.Select(e => new TestCaseData(e.Title).SetName($"Balance closes: {e.Title}"));
+        ShippedExamples.All.Select(e => new TestCaseData(e.Title).SetName($"Balance closes: {e.Title}"));
 
     [TestCaseSource(nameof(Examples))]
     public async Task Examples_HeatInPlusPowerEqualsHeatOut(string title)
     {
-        SystemDocument document = ExampleSystems.All.Single(e => e.Title == title).Create();
+        SystemDocument document = ShippedExamples.All.Single(e => e.Title == title).Create();
         SolveResult result = await _service.SolveAsync(document);
         Assert.That(result.Success, Is.True, result.Message);
 
@@ -34,7 +34,7 @@ public class EnergyBalanceTests
     [Test]
     public async Task TwoStage_ClassifiesComponents()
     {
-        SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
+        SystemDocument document = ShippedExamples.TwoStageWithParallelCompressor();
         SolveResult result = await _service.SolveAsync(document);
         EnergySummary energy = EnergyBalance.Compute(document, ComponentCatalog.Default, result);
 
@@ -47,7 +47,7 @@ public class EnergyBalanceTests
     [Test]
     public async Task Ejector_CountsWaterHeatExchangersButNotTheInternalOne()
     {
-        SystemDocument document = ExampleSystems.EjectorHeatPump();
+        SystemDocument document = ShippedExamples.EjectorHeatPump();
         SolveResult result = await _service.SolveAsync(document);
         Assert.That(result.Success, Is.True, result.Message);
         EnergySummary energy = EnergyBalance.Compute(document, ComponentCatalog.Default, result);
@@ -60,7 +60,7 @@ public class EnergyBalanceTests
     [Test]
     public async Task Override_ChangesOrRemovesContribution()
     {
-        SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
+        SystemDocument document = ShippedExamples.TwoStageWithParallelCompressor();
         SolveResult result = await _service.SolveAsync(document);
         EnergySummary before = EnergyBalance.Compute(document, ComponentCatalog.Default, result);
 
@@ -77,7 +77,7 @@ public class EnergyBalanceTests
     [Test]
     public void EnergyRoleAndStudy_DoNotChangeFingerprint()
     {
-        SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
+        SystemDocument document = ShippedExamples.TwoStageWithParallelCompressor();
         string fingerprint = DocumentSerializer.Fingerprint(document);
         document.Nodes[0].EnergyRole = EnergyRole.Ignore;
         document.Study = new StudyDefinition { Variables = [new StudyVariable { NodeId = document.Nodes[0].Id, ParameterKey = "x" }] };
@@ -125,7 +125,7 @@ public class StudyTests
     [Test]
     public async Task TwoByThree_SolvesEveryPointWithItsValues()
     {
-        SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
+        SystemDocument document = ShippedExamples.TwoStageWithParallelCompressor();
         NodeModel gasCooler = document.Nodes.Single(n => n.Name == "Gas cooler");
         StudyDefinition study = new()
         {
@@ -158,7 +158,7 @@ public class StudyTests
     [Test]
     public async Task WarmStart_GivesSameResultsAsColdStart()
     {
-        SystemDocument document = ExampleSystems.Co2WithReceiver();
+        SystemDocument document = ShippedExamples.Co2WithReceiver();
         StudyDefinition study = new() { Variables = [Variable(document, "Gas cooler", "outletTemperature", 25, 35, 4)] };
 
         StudyResult warm = await Runner.RunAsync(document, study);
@@ -176,7 +176,7 @@ public class StudyTests
     [TestCaseSource(typeof(EnergyBalanceTests), "Examples")]
     public async Task WarmStartedDocument_SolvesToTheSameState(string title)
     {
-        SystemDocument document = ExampleSystems.All.Single(e => e.Title == title).Create();
+        SystemDocument document = ShippedExamples.All.Single(e => e.Title == title).Create();
         SolveResult cold = await _service.SolveAsync(document);
         SolveResult warm = await _service.SolveAsync(StudyRunner.WithWarmStart(document, cold));
 
@@ -189,7 +189,7 @@ public class StudyTests
     [Test]
     public async Task OutOfRangeValue_FailsOnlyItsOwnPoint()
     {
-        SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
+        SystemDocument document = ShippedExamples.TwoStageWithParallelCompressor();
         // Isentropic efficiency must be at most 1.
         StudyDefinition study = new() { Variables = [Variable(document, "Comp1", "isentropicEfficiency", 0.8, 1.2, 3)] };
 
@@ -202,7 +202,7 @@ public class StudyTests
     [Test]
     public async Task Cancelling_StopsEarlyAndKeepsFinishedPoints()
     {
-        SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
+        SystemDocument document = ShippedExamples.TwoStageWithParallelCompressor();
         StudyDefinition study = new() { Variables = [Variable(document, "Gas cooler", "outletTemperature", 25, 35, 10)] };
         using CancellationTokenSource cancellation = new();
 
@@ -216,7 +216,7 @@ public class StudyTests
     [Test]
     public void InvalidSetup_IsReported()
     {
-        SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
+        SystemDocument document = ShippedExamples.TwoStageWithParallelCompressor();
         StudyDefinition study = new()
         {
             Variables =
@@ -235,7 +235,7 @@ public class StudyTests
     [Test]
     public void Study_RoundTripsThroughFile()
     {
-        SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
+        SystemDocument document = ShippedExamples.TwoStageWithParallelCompressor();
         document.Study = new StudyDefinition
         {
             Variables = [Variable(document, "Comp1", "dischargePressure", 80, 100, 5)],

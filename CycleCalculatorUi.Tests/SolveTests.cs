@@ -19,7 +19,7 @@ public class SolveTests
     [Test]
     public async Task TwoStageExample_MatchesBackendReferenceValues()
     {
-        SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
+        SystemDocument document = ShippedExamples.TwoStageWithParallelCompressor();
         SolveResult result = await _service.SolveAsync(document);
 
         Assert.That(result.Success, Is.True, result.Message);
@@ -32,7 +32,7 @@ public class SolveTests
     [Test]
     public async Task EstimateStart_ReturnsStartValuesAsUnsolvedResult()
     {
-        SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
+        SystemDocument document = ShippedExamples.TwoStageWithParallelCompressor();
         SolveResult result = await _service.EstimateStartAsync(document);
 
         Assert.That(result.IsStartGuess, Is.True);
@@ -46,7 +46,7 @@ public class SolveTests
     [Test]
     public async Task EjectorExample_HeatExchangersReportTemperatureProfiles()
     {
-        SystemDocument document = ExampleSystems.EjectorHeatPump();
+        SystemDocument document = ShippedExamples.EjectorHeatPump();
         SolveResult result = await _service.SolveAsync(document);
         Assert.That(result.Success, Is.True, result.Message);
 
@@ -72,7 +72,7 @@ public class SolveTests
     [Test]
     public async Task TwoStageExample_MatchesSameSystemBuiltDirectlyInBackend()
     {
-        SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
+        SystemDocument document = ShippedExamples.TwoStageWithParallelCompressor();
         SolveResult result = await _service.SolveAsync(document);
         Assert.That(result.Success, Is.True, result.Message);
 
@@ -117,7 +117,7 @@ public class SolveTests
     [Test]
     public async Task SimpleCompressor_SuctionVolumeFlowGivesSameMassFlow()
     {
-        SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
+        SystemDocument document = ShippedExamples.TwoStageWithParallelCompressor();
         SolveResult reference = await _service.SolveAsync(document);
         Assert.That(reference.Success, Is.True, reference.Message);
         double volumeFlow = reference.Outputs[NodeId(document, "Comp1")]
@@ -140,7 +140,7 @@ public class SolveTests
         SolveService service = new(ComponentCatalog.Default,
             new SolveOptions { ProgressInterval = 1, MinProgressPeriod = TimeSpan.Zero });
         List<IReadOnlyList<SolverIteration>> reports = [];
-        SolveResult result = await service.SolveAsync(ExampleSystems.TwoStageWithParallelCompressor(),
+        SolveResult result = await service.SolveAsync(ShippedExamples.TwoStageWithParallelCompressor(),
             onProgress: history => { lock (reports) reports.Add(history); });
 
         Assert.That(result.Success, Is.True, result.Message);
@@ -153,7 +153,7 @@ public class SolveTests
     [Test]
     public async Task StartGuesses_OnStreamAndPorts_SolveToSameResult()
     {
-        SystemDocument document = ExampleSystems.EjectorHeatPump();
+        SystemDocument document = ShippedExamples.EjectorHeatPump();
         SolveResult reference = await _service.SolveAsync(document);
         Assert.That(reference.Success, Is.True, reference.Message);
 
@@ -172,7 +172,7 @@ public class SolveTests
     [Test]
     public void StartGuesses_InvalidGuessesAreReportedPerGuess()
     {
-        SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
+        SystemDocument document = ShippedExamples.TwoStageWithParallelCompressor();
         NodeModel split = document.Nodes.Single(n => n.Name == "Split2");
         split.Guesses.Add(new GuessModel(GuessQuantity.MassFlow, 1));
         split.Guesses.Add(new GuessModel(GuessQuantity.Quality, 1.5, "Inlet"));
@@ -186,7 +186,7 @@ public class SolveTests
     [Test]
     public async Task StartGuesses_FromResultMatchResultPorts()
     {
-        SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
+        SystemDocument document = ShippedExamples.TwoStageWithParallelCompressor();
         SolveResult result = await _service.SolveAsync(document);
         NodeModel comp = document.Nodes.Single(n => n.Name == "Comp1");
         ComponentDescriptor descriptor = ComponentCatalog.Default.Get(comp.TypeId);
@@ -220,7 +220,7 @@ public class SolveTests
     {
         using CancellationTokenSource cts = new();
         cts.Cancel();
-        SolveResult result = await _service.SolveAsync(ExampleSystems.TwoStageWithParallelCompressor(), cts.Token);
+        SolveResult result = await _service.SolveAsync(ShippedExamples.TwoStageWithParallelCompressor(), cts.Token);
 
         Assert.That(result.Success, Is.False);
     }
@@ -228,7 +228,7 @@ public class SolveTests
     [Test]
     public async Task ReceiverExample_Solves()
     {
-        SystemDocument document = ExampleSystems.Co2WithReceiver();
+        SystemDocument document = ShippedExamples.Co2WithReceiver();
         SolveResult result = await _service.SolveAsync(document);
 
         Assert.That(result.Success, Is.True, result.Message);
@@ -243,7 +243,7 @@ public class SolveTests
     [Test]
     public async Task InvalidDocument_ReturnsIssuesInsteadOfThrowing()
     {
-        SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
+        SystemDocument document = ShippedExamples.TwoStageWithParallelCompressor();
         document.Connections.RemoveAt(0);
 
         SolveResult result = await _service.SolveAsync(document);
@@ -255,7 +255,7 @@ public class SolveTests
     [Test]
     public async Task UnderSpecifiedSystem_ReportsSolverMessage()
     {
-        SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
+        SystemDocument document = ShippedExamples.TwoStageWithParallelCompressor();
         foreach (NodeModel compressor in document.Nodes.Where(n => n.TypeId == "SimpleCompressor"))
             compressor.Numbers["massFlow"] = null;
 
@@ -382,7 +382,7 @@ public class EjectorExampleTests
     [Test]
     public async Task EjectorHeatPump_SolvesWithSignalConnectionsAndTwoFluids()
     {
-        SystemDocument document = ExampleSystems.EjectorHeatPump();
+        SystemDocument document = ShippedExamples.EjectorHeatPump();
         Assert.That(new ModelBuilder(ComponentCatalog.Default).Validate(document), Is.Empty);
 
         SolveResult result = await new SolveService(ComponentCatalog.Default).SolveAsync(document);

@@ -27,7 +27,16 @@ public sealed class BrowserDraftStore(IJSRuntime js) : IDraftStore
     public async Task<string?> LoadAsync()
     {
         await using IJSObjectReference module = await BrowserFileService.Host(js);
-        return await module.InvokeAsync<string?>("loadDraft", Key);
+        // Streamed in chunks: a draft can be larger than the 32 KB limit of a single message from the browser.
+        IJSStreamReference? draft = await module.InvokeAsync<IJSStreamReference?>("loadDraft", Key);
+        if (draft is null)
+            return null;
+        await using (draft)
+        {
+            await using Stream stream = await draft.OpenReadStreamAsync(maxAllowedSize: 20 * 1024 * 1024);
+            using StreamReader reader = new(stream);
+            return await reader.ReadToEndAsync();
+        }
     }
 
     public async Task SaveAsync(string content)

@@ -84,7 +84,7 @@ public static class DocumentSerializer
         string[] nodeKeys = ["massFlowUnit", "powerUnit", "dischargeVariable", "nominalSuperheat"];
         string[] itemKeys = ["massFlowPolynomial", "powerPolynomial", "currentPolynomial", "nominalFrequency"];
         // Polynomials left out were the editor's defaults, the example compressor's.
-        CompressorPoint example = Examples.ExampleSystems.EjectorCompressor.Variants[0].Points[0];
+        CompressorPoint example = En12900Library.ExampleCompressor.Variants[0].Points[0];
         foreach (NodeModel node in document.Nodes.Where(n => n.TypeId == nameof(CycleCalculator.CycleModel.Model.En12900Compressor)))
         {
             En12900MassFlowUnit massFlowUnit = Enum.TryParse(node.Choices.GetValueOrDefault("massFlowUnit"), out En12900MassFlowUnit m)

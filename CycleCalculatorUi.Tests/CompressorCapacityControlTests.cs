@@ -51,9 +51,9 @@ public class CompressorCapacityControlTests
     public async Task En12900Compressor_WithInterpolatedData_HoldsTheSuctionPressure()
     {
         // Example polynomials measured at 30–70 Hz, with a slightly non-linear frequency dependence.
-        CompressorPoint example = CycleCalculatorUi.Core.Examples.ExampleSystems.EjectorCompressor.Variants[0].Points[0];
+        CompressorPoint example = En12900Library.ExampleCompressor.Variants[0].Points[0];
         static double Factor(double f) => f / 50 * (1 + 0.002 * (f - 50));
-        CompressorModel model = CycleCalculatorUi.Core.Examples.ExampleSystems.EjectorCompressor with
+        CompressorModel model = En12900Library.ExampleCompressor with
         {
             Name = "Interpolated",
             Variants =

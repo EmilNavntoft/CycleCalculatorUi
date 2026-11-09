@@ -19,7 +19,7 @@ public class ParallelCompressorTests
     private static (EditorState State, NodeModel Node) EditorWithCompressor()
     {
         EditorState state = new(ComponentCatalog.Default, new SolveService(ComponentCatalog.Default));
-        state.Load(ExampleSystems.EjectorHeatPump());
+        state.Load(ShippedExamples.EjectorHeatPump());
         return (state, state.Document.Nodes.Single(n => n.Name == "Comp1"));
     }
 
@@ -80,7 +80,7 @@ public class ParallelCompressorTests
     [Test]
     public void OldDocumentsWithoutGroupCounts_HaveOneCompressor()
     {
-        SystemDocument document = ExampleSystems.EjectorHeatPump();
+        SystemDocument document = ShippedExamples.EjectorHeatPump();
         NodeModel node = document.Nodes.Single(n => n.Name == "Comp1");
         node.GroupCounts.Clear();
         document = DocumentSerializer.Deserialize(DocumentSerializer.Serialize(document));
@@ -160,7 +160,7 @@ public class ParallelCompressorTests
     [Test]
     public void OldDocumentsWithAnOperatingFrequency_LoadAsVariableSpeed()
     {
-        SystemDocument document = ExampleSystems.EjectorHeatPump();
+        SystemDocument document = ShippedExamples.EjectorHeatPump();
         NodeModel node = document.Nodes.Single(n => n.Name == "Comp1");
         node.GroupCounts[Group] = 2;
         node.Numbers["operatingFrequency#2"] = 45;

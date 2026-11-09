@@ -182,7 +182,7 @@ public class CompressorLibraryTests
     [Test]
     public void Write_ReadsBackToTheSameModel()
     {
-        foreach (CompressorModel model in ParseClean(VariantModel).Concat(ParseClean(TwoLegacyModels)).Append(ExampleSystems.EjectorCompressor))
+        foreach (CompressorModel model in ParseClean(VariantModel).Concat(ParseClean(TwoLegacyModels)).Append(En12900Library.ExampleCompressor))
         {
             string text = CompressorLibrary.Write(model);
             List<string> problems = [];
@@ -248,10 +248,10 @@ public class CompressorLibraryTests
     [Test]
     public void TheEjectorExample_EmbedsItsCompressorWithoutWarnings()
     {
-        SystemDocument document = ExampleSystems.EjectorHeatPump();
+        SystemDocument document = ShippedExamples.EjectorHeatPump();
         NodeModel node = document.Nodes.Single(n => n.Name == "Comp1");
 
-        Assert.That(En12900Library.Embedded(node, 0)!.Name, Is.EqualTo(ExampleSystems.EjectorCompressor.Name));
+        Assert.That(En12900Library.Embedded(node, 0)!.Name, Is.EqualTo(En12900Library.ExampleCompressor.Name));
         Assert.That(new ModelBuilder(ComponentCatalog.Default).Validate(document), Is.Empty);
     }
 
@@ -386,7 +386,7 @@ public class CompressorLibraryTests
     /// <summary>Turns a compressor node back into the format-2 shape: polynomials as parameters.</summary>
     private static string ToFormat2(SystemDocument document, NodeModel node, double nominalFrequency)
     {
-        CompressorPoint example = ExampleSystems.EjectorCompressor.Variants[0].Points[0];
+        CompressorPoint example = En12900Library.ExampleCompressor.Variants[0].Points[0];
         node.Texts.Clear();
         node.Choices.Remove(En12900Library.ModelKey);
         node.Choices.Remove(En12900Library.NetFrequencyKey);
@@ -405,11 +405,11 @@ public class CompressorLibraryTests
     [Test]
     public async Task Format2Documents_EmbedTheirPolynomialsAndSolveTheSame()
     {
-        SystemDocument current = ExampleSystems.EjectorHeatPump();
+        SystemDocument current = ShippedExamples.EjectorHeatPump();
         SolveResult expected = await new SolveService(ComponentCatalog.Default).SolveAsync(current);
         Assert.That(expected.Success, Is.True, expected.Message);
 
-        SystemDocument document = ExampleSystems.EjectorHeatPump();
+        SystemDocument document = ShippedExamples.EjectorHeatPump();
         NodeModel node = document.Nodes.Single(n => n.Name == "Comp1");
         document = DocumentSerializer.Deserialize(ToFormat2(document, node, 50));
         node = document.Nodes.Single(n => n.Id == node.Id);
@@ -431,7 +431,7 @@ public class CompressorLibraryTests
     [Test]
     public void Format2VariableSpeedAt60Hz_StillRunsAtItsNominalFrequency()
     {
-        SystemDocument document = ExampleSystems.EjectorHeatPump();
+        SystemDocument document = ShippedExamples.EjectorHeatPump();
         NodeModel node = document.Nodes.Single(n => n.Name == "Comp1");
         node.Choices[BuiltInComponents.SpeedControlKey] = "variable";
         document = DocumentSerializer.Deserialize(ToFormat2(document, node, 60));
@@ -461,7 +461,7 @@ public class CompressorLibraryTests
         CompressorLibrary library = new(_directory);
         ComponentCatalog catalog = ComponentCatalog.WithLibrary(library);
         EditorState state = new(catalog, new SolveService(catalog));
-        state.Load(ExampleSystems.EjectorHeatPump());
+        state.Load(ShippedExamples.EjectorHeatPump());
         return (state, state.Document.Nodes.Single(n => n.Name == "Comp1"), library);
     }
 }

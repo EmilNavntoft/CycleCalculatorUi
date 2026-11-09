@@ -26,6 +26,41 @@ public static class En12900Library
 
     public static readonly string[] StandardNetFrequencies = ["50", "60"];
 
+    /// <summary>
+    /// The CO₂ compressor of the backend's end-to-end tests: one polynomial set measured at 50 Hz that scales linearly,
+    /// for any net frequency. Older files that left out polynomials used these (the editor's former defaults); the
+    /// shipped ejector heat pump example embeds it.
+    /// </summary>
+    public static CompressorModel ExampleCompressor { get; } = new()
+    {
+        Name = "CO₂ compressor (example data)",
+        File = "",
+        DischargeVariable = En12900DischargeVariable.Pressure,
+        NominalSuperheat = 10,
+        MassFlowUnit = En12900MassFlowUnit.KilogramsPerHour,
+        PowerUnit = En12900PowerUnit.Watts,
+        Variants = [ExampleCompressorVariant(CompressorSpeed.Fixed), ExampleCompressorVariant(CompressorSpeed.Variable)]
+    };
+
+    private static CompressorVariant ExampleCompressorVariant(CompressorSpeed speed) => new()
+    {
+        Speed = speed,
+        Scaling = En12900FrequencyScaling.Linear,
+        Points =
+        [
+            new CompressorPoint(50,
+            [
+                2396.20919901144, 69.4448899794199, -5.00691806645477, 0.899339507043113, -0.00410373098918049,
+                -0.00457899885315599, 0.00873555952226035, 0.00163967376135643, -0.000277241052561197,
+                -0.00000000165694956689
+            ],
+            [
+                -15179.3465346534, -464.76089108911, 754.703465346531, -4.01655742574256, 1.45824059405942,
+                -3.04439702970294, 0.0102332673267327, -0.0566240792079209, 0.0384600297029703, 0.00535540990099
+            ], null)
+        ]
+    };
+
     private static readonly ConcurrentDictionary<string, CompressorModel?> ParseCache = new();
 
     public static ParameterDescriptor ModelParameter(CompressorLibrary library) =>

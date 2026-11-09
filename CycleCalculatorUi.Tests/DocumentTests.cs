@@ -20,7 +20,9 @@ public class DocumentTests
     [Test]
     public void Examples_AreValid()
     {
-        foreach (ExampleSystem example in ExampleSystems.All)
+        Assert.That(ShippedExamples.Problems, Is.Empty);
+        Assert.That(ShippedExamples.All, Is.Not.Empty);
+        foreach (ExampleSystem example in ShippedExamples.All)
         {
             IReadOnlyList<ValidationIssue> issues = new ModelBuilder(Catalog).Validate(example.Create());
             Assert.That(issues, Is.Empty, example.Title);
@@ -49,7 +51,7 @@ public class DocumentTests
     [Test]
     public void OutOfRangeParameter_IsReportedOnThatParameter()
     {
-        SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
+        SystemDocument document = ShippedExamples.TwoStageWithParallelCompressor();
         NodeModel compressor = document.Nodes.First(n => n.TypeId == "SimpleCompressor");
         compressor.Numbers["isentropicEfficiency"] = 1.5;
 
@@ -61,7 +63,7 @@ public class DocumentTests
     [Test]
     public void ControlledValve_RequiresSignal_AndIgnoresInactiveOutletPressure()
     {
-        SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
+        SystemDocument document = ShippedExamples.TwoStageWithParallelCompressor();
         NodeModel valve = document.Nodes.Single(n => n.TypeId == "ExpansionValve");
         valve.Choices["mode"] = "signal";
         valve.Choices["controlSignal"] = "superheat";
@@ -84,7 +86,7 @@ public class DocumentTests
     [Test]
     public void MassFlowControlledValve_RequiresSignal_AndBuilds()
     {
-        SystemDocument document = ExampleSystems.TwoStageWithParallelCompressor();
+        SystemDocument document = ShippedExamples.TwoStageWithParallelCompressor();
         NodeModel valve = document.Nodes.Single(n => n.TypeId == "ExpansionValve");
         valve.Choices["mode"] = "signal";
         valve.Choices["controlSignal"] = "massFlow";
@@ -155,7 +157,7 @@ public class DocumentTests
     [Test]
     public void Serializer_RoundTrips()
     {
-        SystemDocument document = ExampleSystems.Co2WithReceiver();
+        SystemDocument document = ShippedExamples.Co2WithReceiver();
         document.Nodes[0].Guesses.Add(new GuessModel(CycleCalculator.CycleModel.Model.BaseComponents.GuessQuantity.Pressure, 30, "Inlet"));
         document.Nodes[0].Guesses.Add(new GuessModel(CycleCalculator.CycleModel.Model.BaseComponents.GuessQuantity.Temperature, 20, Stream: 0));
 
@@ -177,7 +179,7 @@ public class DocumentTests
     [Test]
     public void Fingerprint_IgnoresLayoutButNotParameters()
     {
-        SystemDocument document = ExampleSystems.Co2WithReceiver();
+        SystemDocument document = ShippedExamples.Co2WithReceiver();
         string original = DocumentSerializer.Fingerprint(document);
 
         document.Nodes[0].X += 100;
@@ -193,7 +195,7 @@ public class DocumentTests
     public void ShapedRoutes_MoveWithBothEnds_AndSaveAndUndo()
     {
         EditorState state = new(ComponentCatalog.Default, new Core.Solving.SolveService(ComponentCatalog.Default));
-        state.Load(ExampleSystems.Co2WithReceiver());
+        state.Load(ShippedExamples.Co2WithReceiver());
         ConnectionModel connection = state.Document.Connections[0];
         state.SetConnectionPoints(connection.Id, [new CanvasPoint(100, 50), new CanvasPoint(100, 200)]);
 
@@ -226,7 +228,7 @@ public class DocumentTests
     [Test]
     public void FlowDirection_IsPositiveDownstream_AndFlagsReversedFlow()
     {
-        SystemDocument document = ExampleSystems.EjectorHeatPump();
+        SystemDocument document = ShippedExamples.EjectorHeatPump();
         ComponentCatalog catalog = ComponentCatalog.Default;
         NodeModel cooler = document.Nodes.Single(n => n.Name == "Gas cooler");
         NodeModel sinkIn = document.Nodes.Single(n => n.Name == "Water in (sink)");
