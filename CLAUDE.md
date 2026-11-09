@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A drag-and-drop editor for thermodynamic cycles (refrigeration/heat-pump systems) on top of the CycleCalculator solver. The solver lives in the `CycleCalculator/` git submodule (its own repo, see `CycleCalculator/README.md` for components, units and solver overview). All projects target .NET 10.
 
+Human-readable developer documentation: `docs/README.md` (UI) and `CycleCalculator/docs/README.md` (backend). Keep them in step when changing behaviour they describe.
+
 ## Commands
 
 ```bash
