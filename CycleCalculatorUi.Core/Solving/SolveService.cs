@@ -69,7 +69,7 @@ public sealed class SolveResult
     /// <summary>Fingerprint of the document that was solved; compare to detect stale results.</summary>
     public string Fingerprint { get; init; } = "";
 
-    /// <summary>Largest scaled residual of every nonlinear solver iteration, in order.</summary>
+    /// <summary>Largest residual of every nonlinear solver iteration, in order.</summary>
     public IReadOnlyList<SolverIteration> ResidualHistory { get; init; } = [];
 
     public PortResult? Port(string nodeId, string portKey) =>

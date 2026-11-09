@@ -1,4 +1,4 @@
-@* Largest scaled residual against solver iteration, on a log scale. Updates live while the solver runs. *@
+@* Largest residual against solver iteration, on a log scale. Updates live while the solver runs. *@
 @using CycleCalculator.CycleModel.Solver
 
 <div class="convergence">
@@ -32,7 +32,7 @@
             <line class="crosshair" x1="@L" x2="@(L + PlotW)" y1="@N(Y(Math.Log10(Tolerance)))" y2="@N(Y(Math.Log10(Tolerance)))"/>
             <text class="tick" x="@(L + PlotW - 4)" y="@N(Y(Math.Log10(Tolerance)) - 4)" text-anchor="end">tolerance</text>
             <text class="axis-title" x="@(L + PlotW / 2)" y="@(H - 4)" text-anchor="middle">Iteration</text>
-            <text class="axis-title" transform="translate(13 @(T + PlotH / 2)) rotate(-90)" text-anchor="middle">Max scaled residual</text>
+            <text class="axis-title" transform="translate(13 @(T + PlotH / 2)) rotate(-90)" text-anchor="middle">Max residual</text>
             <path class="series-line" d="@_path" style="stroke: var(--series-1)"/>
             <circle class="series-dot" cx="@N(X(last.Iteration))" cy="@N(Y(Log(last.MaxResidual)))" r="4" style="fill: var(--series-1)"/>
         </svg>

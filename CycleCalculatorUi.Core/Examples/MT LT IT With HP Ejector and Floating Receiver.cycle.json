@@ -21,7 +21,7 @@
         "suctionVolumeFlow": 30,
         "pressureSetpoint": 30,
         "temperatureSetpoint": 0,
-        "superheatSetpoint": 5,
+        "superSetpoint": 5,
         "massFlowSetpoint": 0.1,
         "heatTransferSetpoint": 10,
         "envelopeSetpoint": 0.8,

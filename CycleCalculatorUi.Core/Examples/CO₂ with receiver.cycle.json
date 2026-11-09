@@ -1,0 +1,426 @@
+{
+  "version": 3,
+  "name": "CO\u2082 with receiver",
+  "defaultFluid": {
+    "fluid": "CarbonDioxide",
+    "backend": "HEOS"
+  },
+  "nodes": [
+    {
+      "id": "3a29e3fc5c38",
+      "typeId": "Merge",
+      "name": "Merge",
+      "x": 96,
+      "y": 64,
+      "rotation": 0,
+      "flipHorizontal": false,
+      "numbers": {},
+      "arrays": {},
+      "groupCounts": {},
+      "choices": {},
+      "texts": {},
+      "fluids": [
+        {
+          "fluid": "CarbonDioxide",
+          "backend": "HEOS"
+        }
+      ],
+      "energyRole": "Auto",
+      "guesses": []
+    },
+    {
+      "id": "0b4d08b85bee",
+      "typeId": "SimpleCompressor",
+      "name": "Comp1",
+      "x": 288,
+      "y": 64,
+      "rotation": 0,
+      "flipHorizontal": false,
+      "numbers": {
+        "isentropicEfficiency": 0.7,
+        "dischargePressure": 90,
+        "massFlow": null,
+        "suctionVolumeFlow": null,
+        "pressureSetpoint": 30,
+        "temperatureSetpoint": 0,
+        "superheatSetpoint": 5,
+        "massFlowSetpoint": 0.1,
+        "heatTransferSetpoint": 10,
+        "envelopeSetpoint": 0.8,
+        "operatorOutputSetpoint": 0,
+        "minMassFlow": null,
+        "maxMassFlow": null
+      },
+      "arrays": {},
+      "groupCounts": {},
+      "choices": {
+        "flowSpecification": "massFlow",
+        "controlSignal": "pressure",
+        "controlSign": "auto"
+      },
+      "texts": {},
+      "fluids": [
+        {
+          "fluid": "CarbonDioxide",
+          "backend": "HEOS"
+        }
+      ],
+      "energyRole": "Auto",
+      "guesses": []
+    },
+    {
+      "id": "cc501b5e1ea7",
+      "typeId": "TemperatureBoundary",
+      "name": "Gas cooler",
+      "x": 480,
+      "y": 64,
+      "rotation": 0,
+      "flipHorizontal": false,
+      "numbers": {
+        "outletTemperature": 30
+      },
+      "arrays": {},
+      "groupCounts": {},
+      "choices": {},
+      "texts": {},
+      "fluids": [
+        {
+          "fluid": "CarbonDioxide",
+          "backend": "HEOS"
+        }
+      ],
+      "energyRole": "Auto",
+      "guesses": []
+    },
+    {
+      "id": "0a19e130a32d",
+      "typeId": "ExpansionValve",
+      "name": "HP valve",
+      "x": 672,
+      "y": 64,
+      "rotation": 0,
+      "flipHorizontal": false,
+      "numbers": {
+        "outletPressure": 45,
+        "pressureSetpoint": 30,
+        "temperatureSetpoint": 0,
+        "superheatSetpoint": 5,
+        "massFlowSetpoint": 0.1,
+        "heatTransferSetpoint": 10,
+        "envelopeSetpoint": 0.8,
+        "operatorOutputSetpoint": 0,
+        "minOutletPressure": null,
+        "maxOutletPressure": null
+      },
+      "arrays": {},
+      "groupCounts": {},
+      "choices": {
+        "mode": "fixed",
+        "controlSignal": "superheat",
+        "controlSign": "auto"
+      },
+      "texts": {},
+      "fluids": [
+        {
+          "fluid": "CarbonDioxide",
+          "backend": "HEOS"
+        }
+      ],
+      "energyRole": "Auto",
+      "guesses": []
+    },
+    {
+      "id": "68626a108785",
+      "typeId": "Receiver",
+      "name": "Receiver",
+      "x": 864,
+      "y": 64,
+      "rotation": 0,
+      "flipHorizontal": false,
+      "numbers": {},
+      "arrays": {},
+      "groupCounts": {},
+      "choices": {},
+      "texts": {},
+      "fluids": [
+        {
+          "fluid": "CarbonDioxide",
+          "backend": "HEOS"
+        }
+      ],
+      "energyRole": "Auto",
+      "guesses": []
+    },
+    {
+      "id": "3613e6b084c6",
+      "typeId": "ExpansionValve",
+      "name": "Flash gas valve",
+      "x": 480,
+      "y": 224,
+      "rotation": 0,
+      "flipHorizontal": true,
+      "numbers": {
+        "outletPressure": 35,
+        "pressureSetpoint": 30,
+        "temperatureSetpoint": 0,
+        "superheatSetpoint": 5,
+        "massFlowSetpoint": 0.1,
+        "heatTransferSetpoint": 10,
+        "envelopeSetpoint": 0.8,
+        "operatorOutputSetpoint": 0,
+        "minOutletPressure": null,
+        "maxOutletPressure": null
+      },
+      "arrays": {},
+      "groupCounts": {},
+      "choices": {
+        "mode": "fixed",
+        "controlSignal": "superheat",
+        "controlSign": "auto"
+      },
+      "texts": {},
+      "fluids": [
+        {
+          "fluid": "CarbonDioxide",
+          "backend": "HEOS"
+        }
+      ],
+      "energyRole": "Auto",
+      "guesses": []
+    },
+    {
+      "id": "8f53cfd129fc",
+      "typeId": "ExpansionValve",
+      "name": "LT valve",
+      "x": 1008,
+      "y": 368,
+      "rotation": 90,
+      "flipHorizontal": false,
+      "numbers": {
+        "outletPressure": 20,
+        "pressureSetpoint": 30,
+        "temperatureSetpoint": 0,
+        "superheatSetpoint": 5,
+        "massFlowSetpoint": 0.1,
+        "heatTransferSetpoint": 10,
+        "envelopeSetpoint": 0.8,
+        "operatorOutputSetpoint": 0,
+        "minOutletPressure": null,
+        "maxOutletPressure": null
+      },
+      "arrays": {},
+      "groupCounts": {},
+      "choices": {
+        "mode": "fixed",
+        "controlSignal": "superheat",
+        "controlSign": "auto"
+      },
+      "texts": {},
+      "fluids": [
+        {
+          "fluid": "CarbonDioxide",
+          "backend": "HEOS"
+        }
+      ],
+      "energyRole": "Auto",
+      "guesses": []
+    },
+    {
+      "id": "7dab66d7b901",
+      "typeId": "TemperatureBoundary",
+      "name": "LT evaporator",
+      "x": 768,
+      "y": 512,
+      "rotation": 0,
+      "flipHorizontal": true,
+      "numbers": {
+        "outletTemperature": -8
+      },
+      "arrays": {},
+      "groupCounts": {},
+      "choices": {},
+      "texts": {},
+      "fluids": [
+        {
+          "fluid": "CarbonDioxide",
+          "backend": "HEOS"
+        }
+      ],
+      "energyRole": "Auto",
+      "guesses": []
+    },
+    {
+      "id": "368670b5fbd9",
+      "typeId": "SimpleCompressor",
+      "name": "Comp2",
+      "x": 480,
+      "y": 512,
+      "rotation": 0,
+      "flipHorizontal": true,
+      "numbers": {
+        "isentropicEfficiency": 0.7,
+        "dischargePressure": 35,
+        "massFlow": 1,
+        "suctionVolumeFlow": null,
+        "pressureSetpoint": 30,
+        "temperatureSetpoint": 0,
+        "superheatSetpoint": 5,
+        "massFlowSetpoint": 0.1,
+        "heatTransferSetpoint": 10,
+        "envelopeSetpoint": 0.8,
+        "operatorOutputSetpoint": 0,
+        "minMassFlow": null,
+        "maxMassFlow": null
+      },
+      "arrays": {},
+      "groupCounts": {},
+      "choices": {
+        "flowSpecification": "massFlow",
+        "controlSignal": "pressure",
+        "controlSign": "auto"
+      },
+      "texts": {},
+      "fluids": [
+        {
+          "fluid": "CarbonDioxide",
+          "backend": "HEOS"
+        }
+      ],
+      "energyRole": "Auto",
+      "guesses": []
+    }
+  ],
+  "connections": [
+    {
+      "id": "892aec83ff27",
+      "kind": "Fluid",
+      "from": {
+        "nodeId": "3a29e3fc5c38",
+        "portKey": "Outlet"
+      },
+      "to": {
+        "nodeId": "0b4d08b85bee",
+        "portKey": "Inlet"
+      },
+      "points": null
+    },
+    {
+      "id": "454745f6c0bc",
+      "kind": "Fluid",
+      "from": {
+        "nodeId": "0b4d08b85bee",
+        "portKey": "Outlet"
+      },
+      "to": {
+        "nodeId": "cc501b5e1ea7",
+        "portKey": "Inlet"
+      },
+      "points": null
+    },
+    {
+      "id": "665cacd4a6aa",
+      "kind": "Fluid",
+      "from": {
+        "nodeId": "cc501b5e1ea7",
+        "portKey": "Outlet"
+      },
+      "to": {
+        "nodeId": "0a19e130a32d",
+        "portKey": "Inlet"
+      },
+      "points": null
+    },
+    {
+      "id": "c64c4c483279",
+      "kind": "Fluid",
+      "from": {
+        "nodeId": "0a19e130a32d",
+        "portKey": "Outlet"
+      },
+      "to": {
+        "nodeId": "68626a108785",
+        "portKey": "Inlet"
+      },
+      "points": null
+    },
+    {
+      "id": "8efd689bd98d",
+      "kind": "Fluid",
+      "from": {
+        "nodeId": "68626a108785",
+        "portKey": "OutletGas"
+      },
+      "to": {
+        "nodeId": "3613e6b084c6",
+        "portKey": "Inlet"
+      },
+      "points": null
+    },
+    {
+      "id": "2e8ae3278670",
+      "kind": "Fluid",
+      "from": {
+        "nodeId": "3613e6b084c6",
+        "portKey": "Outlet"
+      },
+      "to": {
+        "nodeId": "3a29e3fc5c38",
+        "portKey": "Inlet2"
+      },
+      "points": null
+    },
+    {
+      "id": "c64294cf0da4",
+      "kind": "Fluid",
+      "from": {
+        "nodeId": "68626a108785",
+        "portKey": "OutletLiquid"
+      },
+      "to": {
+        "nodeId": "8f53cfd129fc",
+        "portKey": "Inlet"
+      },
+      "points": null
+    },
+    {
+      "id": "0bacfb379311",
+      "kind": "Fluid",
+      "from": {
+        "nodeId": "8f53cfd129fc",
+        "portKey": "Outlet"
+      },
+      "to": {
+        "nodeId": "7dab66d7b901",
+        "portKey": "Inlet"
+      },
+      "points": null
+    },
+    {
+      "id": "438bc24d92a6",
+      "kind": "Fluid",
+      "from": {
+        "nodeId": "7dab66d7b901",
+        "portKey": "Outlet"
+      },
+      "to": {
+        "nodeId": "368670b5fbd9",
+        "portKey": "Inlet"
+      },
+      "points": null
+    },
+    {
+      "id": "4f4902176b6a",
+      "kind": "Fluid",
+      "from": {
+        "nodeId": "368670b5fbd9",
+        "portKey": "Outlet"
+      },
+      "to": {
+        "nodeId": "3a29e3fc5c38",
+        "portKey": "Inlet"
+      },
+      "points": null
+    }
+  ],
+  "study": null
+}

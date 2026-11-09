@@ -3,7 +3,7 @@
   "name": "LP ejector system with two pumps",
   "defaultFluid": {
     "fluid": "CarbonDioxide",
-    "backend": "TTSE\u0026HEOS"
+    "backend": "HEOS"
   },
   "nodes": [
     {
@@ -79,7 +79,7 @@
       "fluids": [
         {
           "fluid": "Water",
-          "backend": "TTSE\u0026HEOS"
+          "backend": "HEOS"
         },
         {
           "fluid": "CarbonDioxide",
@@ -185,7 +185,7 @@
       "fluids": [
         {
           "fluid": "Water",
-          "backend": "TTSE\u0026HEOS"
+          "backend": "HEOS"
         }
       ],
       "energyRole": "Auto",
@@ -214,7 +214,7 @@
       "fluids": [
         {
           "fluid": "Water",
-          "backend": "TTSE\u0026HEOS"
+          "backend": "HEOS"
         }
       ],
       "energyRole": "Auto",
@@ -306,7 +306,7 @@
           "backend": "HEOS"
         }
       ],
-      "energyRole": "Auto",
+      "energyRole": "HeatInput",
       "guesses": [
         {
           "quantity": "Pressure",
@@ -481,7 +481,7 @@
           "backend": "HEOS"
         }
       ],
-      "energyRole": "Auto",
+      "energyRole": "PowerInput",
       "guesses": []
     },
     {
@@ -520,10 +520,10 @@
       "fluids": [
         {
           "fluid": "Water",
-          "backend": "TTSE\u0026HEOS"
+          "backend": "HEOS"
         }
       ],
-      "energyRole": "PowerInput",
+      "energyRole": "HeatOutput",
       "guesses": []
     },
     {
@@ -546,7 +546,7 @@
       "fluids": [
         {
           "fluid": "Water",
-          "backend": "TTSE\u0026HEOS"
+          "backend": "HEOS"
         }
       ],
       "energyRole": "Auto",
@@ -628,7 +628,7 @@
           "backend": "HEOS"
         }
       ],
-      "energyRole": "Auto",
+      "energyRole": "PowerInput",
       "guesses": [
         {
           "quantity": "MassFlow",

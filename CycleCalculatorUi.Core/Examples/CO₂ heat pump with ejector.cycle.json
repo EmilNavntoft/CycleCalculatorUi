@@ -1,0 +1,561 @@
+{
+  "version": 3,
+  "name": "CO\u2082 heat pump with ejector",
+  "defaultFluid": {
+    "fluid": "CarbonDioxide",
+    "backend": "HEOS"
+  },
+  "nodes": [
+    {
+      "id": "d385ad9d2766",
+      "typeId": "En12900Compressor",
+      "name": "Comp1",
+      "x": 80,
+      "y": 80,
+      "rotation": 0,
+      "flipHorizontal": false,
+      "numbers": {
+        "dischargePressure": 110,
+        "dischargeSaturationTemperature": 40,
+        "pressureSetpoint": 30,
+        "temperatureSetpoint": 0,
+        "superheatSetpoint": 5,
+        "massFlowSetpoint": 0.1,
+        "heatTransferSetpoint": 10,
+        "envelopeSetpoint": 0.8,
+        "operatorOutputSetpoint": 0,
+        "minFrequency": 25,
+        "maxFrequency": 70,
+        "netVoltage": 400,
+        "operatingFrequency": null
+      },
+      "arrays": {},
+      "groupCounts": {
+        "compressors": 1
+      },
+      "choices": {
+        "dischargeCondition": "pressure",
+        "capacityControl": "none",
+        "controlSignal": "pressure",
+        "controlSign": "auto",
+        "netFrequency": "50",
+        "model": "CO\u2082 compressor (example data)",
+        "speedControl": "fixed"
+      },
+      "texts": {
+        "model": "{\u0022name\u0022:\u0022CO\\u2082 compressor (example data)\u0022,\u0022dischargeVariable\u0022:\u0022pressure\u0022,\u0022nominalSuperheat\u0022:10,\u0022massFlowUnit\u0022:\u0022kg/h\u0022,\u0022powerUnit\u0022:\u0022W\u0022,\u0022variants\u0022:[{\u0022speed\u0022:\u0022fixed\u0022,\u0022scaling\u0022:\u0022linear\u0022,\u0022frequencies\u0022:[{\u0022frequency\u0022:50,\u0022massFlow\u0022:[2396.20919901144,69.4448899794199,-5.00691806645477,0.899339507043113,-0.00410373098918049,-0.00457899885315599,0.00873555952226035,0.00163967376135643,-0.000277241052561197,-1.65694956689E-09],\u0022power\u0022:[-15179.3465346534,-464.76089108911,754.703465346531,-4.01655742574256,1.45824059405942,-3.04439702970294,0.0102332673267327,-0.0566240792079209,0.0384600297029703,0.00535540990099]}]},{\u0022speed\u0022:\u0022variable\u0022,\u0022scaling\u0022:\u0022linear\u0022,\u0022frequencies\u0022:[{\u0022frequency\u0022:50,\u0022massFlow\u0022:[2396.20919901144,69.4448899794199,-5.00691806645477,0.899339507043113,-0.00410373098918049,-0.00457899885315599,0.00873555952226035,0.00163967376135643,-0.000277241052561197,-1.65694956689E-09],\u0022power\u0022:[-15179.3465346534,-464.76089108911,754.703465346531,-4.01655742574256,1.45824059405942,-3.04439702970294,0.0102332673267327,-0.0566240792079209,0.0384600297029703,0.00535540990099]}]}]}"
+      },
+      "fluids": [
+        {
+          "fluid": "CarbonDioxide",
+          "backend": "HEOS"
+        }
+      ],
+      "energyRole": "Auto",
+      "guesses": []
+    },
+    {
+      "id": "d3e6c89dace7",
+      "typeId": "FixedEfficiencyEjector",
+      "name": "Ejector",
+      "x": 704,
+      "y": 80,
+      "rotation": 0,
+      "flipHorizontal": false,
+      "numbers": {
+        "isentropicEfficiency": 0.3,
+        "dischargePressure": null
+      },
+      "arrays": {},
+      "groupCounts": {},
+      "choices": {},
+      "texts": {},
+      "fluids": [
+        {
+          "fluid": "CarbonDioxide",
+          "backend": "HEOS"
+        }
+      ],
+      "energyRole": "Auto",
+      "guesses": []
+    },
+    {
+      "id": "c5da62e7190a",
+      "typeId": "Receiver",
+      "name": "Receiver",
+      "x": 912,
+      "y": 80,
+      "rotation": 0,
+      "flipHorizontal": false,
+      "numbers": {},
+      "arrays": {},
+      "groupCounts": {},
+      "choices": {},
+      "texts": {},
+      "fluids": [
+        {
+          "fluid": "CarbonDioxide",
+          "backend": "HEOS"
+        }
+      ],
+      "energyRole": "Auto",
+      "guesses": []
+    },
+    {
+      "id": "c44776d7a0cb",
+      "typeId": "FixedUaHeatExchanger",
+      "name": "Gas cooler",
+      "x": 288,
+      "y": 80,
+      "rotation": 0,
+      "flipHorizontal": false,
+      "numbers": {
+        "ua": 30,
+        "singlePhaseSegments": 5
+      },
+      "arrays": {},
+      "groupCounts": {},
+      "choices": {
+        "profileModel": "movingBoundary"
+      },
+      "texts": {},
+      "fluids": [
+        {
+          "fluid": "CarbonDioxide",
+          "backend": "HEOS"
+        },
+        {
+          "fluid": "Water",
+          "backend": "HEOS"
+        }
+      ],
+      "energyRole": "Auto",
+      "guesses": []
+    },
+    {
+      "id": "eb272eed86d4",
+      "typeId": "FixedUaHeatExchanger",
+      "name": "Evaporator",
+      "x": 704,
+      "y": 304,
+      "rotation": 0,
+      "flipHorizontal": true,
+      "numbers": {
+        "ua": 20,
+        "singlePhaseSegments": 5
+      },
+      "arrays": {},
+      "groupCounts": {},
+      "choices": {
+        "profileModel": "movingBoundary"
+      },
+      "texts": {},
+      "fluids": [
+        {
+          "fluid": "CarbonDioxide",
+          "backend": "HEOS"
+        },
+        {
+          "fluid": "Water",
+          "backend": "HEOS"
+        }
+      ],
+      "energyRole": "Auto",
+      "guesses": []
+    },
+    {
+      "id": "57691b3ffc4e",
+      "typeId": "ExpansionValve",
+      "name": "EXV",
+      "x": 912,
+      "y": 304,
+      "rotation": 0,
+      "flipHorizontal": true,
+      "numbers": {
+        "outletPressure": 35,
+        "pressureSetpoint": 30,
+        "temperatureSetpoint": 0,
+        "superheatSetpoint": 5,
+        "massFlowSetpoint": 0.1,
+        "heatTransferSetpoint": 10,
+        "envelopeSetpoint": 0.8,
+        "operatorOutputSetpoint": 0,
+        "minOutletPressure": null,
+        "maxOutletPressure": null
+      },
+      "arrays": {},
+      "groupCounts": {},
+      "choices": {
+        "mode": "signal",
+        "controlSignal": "superheat",
+        "controlSign": "auto"
+      },
+      "texts": {},
+      "fluids": [
+        {
+          "fluid": "CarbonDioxide",
+          "backend": "HEOS"
+        }
+      ],
+      "energyRole": "Auto",
+      "guesses": []
+    },
+    {
+      "id": "7e4814b97018",
+      "typeId": "FixedEfficiencyHeatExchanger",
+      "name": "IHX",
+      "x": 496,
+      "y": 80,
+      "rotation": 0,
+      "flipHorizontal": false,
+      "numbers": {
+        "efficiency": 0.5,
+        "pressureSetpoint": 30,
+        "temperatureSetpoint": 120,
+        "superheatSetpoint": 5,
+        "massFlowSetpoint": 0.1,
+        "heatTransferSetpoint": 10,
+        "envelopeSetpoint": 0.8,
+        "operatorOutputSetpoint": 0,
+        "minEfficiency": 0.1,
+        "maxEfficiency": 0.9,
+        "singlePhaseSegments": 5
+      },
+      "arrays": {},
+      "groupCounts": {},
+      "choices": {
+        "mode": "signal",
+        "controlSignal": "temperature",
+        "controlSign": "auto",
+        "profileModel": "movingBoundary"
+      },
+      "texts": {},
+      "fluids": [
+        {
+          "fluid": "CarbonDioxide",
+          "backend": "HEOS"
+        },
+        {
+          "fluid": "CarbonDioxide",
+          "backend": "HEOS"
+        }
+      ],
+      "energyRole": "Auto",
+      "guesses": []
+    },
+    {
+      "id": "2c2d63048f85",
+      "typeId": "BoundaryCondition",
+      "name": "Water in (sink)",
+      "x": 336,
+      "y": 208,
+      "rotation": 270,
+      "flipHorizontal": false,
+      "numbers": {
+        "massFlow": null,
+        "pressure": 2,
+        "temperature": 40,
+        "enthalpy": 400
+      },
+      "arrays": {},
+      "groupCounts": {},
+      "choices": {
+        "thermal": "temperature"
+      },
+      "texts": {},
+      "fluids": [
+        {
+          "fluid": "Water",
+          "backend": "HEOS"
+        }
+      ],
+      "energyRole": "Auto",
+      "guesses": []
+    },
+    {
+      "id": "8f3b260bf235",
+      "typeId": "BoundaryCondition",
+      "name": "Water out (sink)",
+      "x": 240,
+      "y": 208,
+      "rotation": 270,
+      "flipHorizontal": false,
+      "numbers": {
+        "massFlow": null,
+        "pressure": null,
+        "temperature": 80,
+        "enthalpy": 400
+      },
+      "arrays": {},
+      "groupCounts": {},
+      "choices": {
+        "thermal": "temperature"
+      },
+      "texts": {},
+      "fluids": [
+        {
+          "fluid": "Water",
+          "backend": "HEOS"
+        }
+      ],
+      "energyRole": "Auto",
+      "guesses": []
+    },
+    {
+      "id": "b2def2f6128f",
+      "typeId": "BoundaryCondition",
+      "name": "Water in (source)",
+      "x": 656,
+      "y": 432,
+      "rotation": 270,
+      "flipHorizontal": false,
+      "numbers": {
+        "massFlow": null,
+        "pressure": 2,
+        "temperature": 12,
+        "enthalpy": 400
+      },
+      "arrays": {},
+      "groupCounts": {},
+      "choices": {
+        "thermal": "temperature"
+      },
+      "texts": {},
+      "fluids": [
+        {
+          "fluid": "Water",
+          "backend": "HEOS"
+        }
+      ],
+      "energyRole": "Auto",
+      "guesses": []
+    },
+    {
+      "id": "386f20512a60",
+      "typeId": "BoundaryCondition",
+      "name": "Water out (source)",
+      "x": 752,
+      "y": 432,
+      "rotation": 270,
+      "flipHorizontal": false,
+      "numbers": {
+        "massFlow": null,
+        "pressure": null,
+        "temperature": 7,
+        "enthalpy": 400
+      },
+      "arrays": {},
+      "groupCounts": {},
+      "choices": {
+        "thermal": "temperature"
+      },
+      "texts": {},
+      "fluids": [
+        {
+          "fluid": "Water",
+          "backend": "HEOS"
+        }
+      ],
+      "energyRole": "Auto",
+      "guesses": []
+    }
+  ],
+  "connections": [
+    {
+      "id": "4bc5980538b5",
+      "kind": "Fluid",
+      "from": {
+        "nodeId": "d385ad9d2766",
+        "portKey": "Outlet"
+      },
+      "to": {
+        "nodeId": "c44776d7a0cb",
+        "portKey": "Inlet"
+      },
+      "points": null
+    },
+    {
+      "id": "68e3503e65a3",
+      "kind": "Fluid",
+      "from": {
+        "nodeId": "c44776d7a0cb",
+        "portKey": "Outlet"
+      },
+      "to": {
+        "nodeId": "7e4814b97018",
+        "portKey": "Inlet"
+      },
+      "points": null
+    },
+    {
+      "id": "a5bebc992b31",
+      "kind": "Fluid",
+      "from": {
+        "nodeId": "7e4814b97018",
+        "portKey": "Outlet"
+      },
+      "to": {
+        "nodeId": "d3e6c89dace7",
+        "portKey": "InletMotive"
+      },
+      "points": null
+    },
+    {
+      "id": "eabf9e4dd2e1",
+      "kind": "Fluid",
+      "from": {
+        "nodeId": "d3e6c89dace7",
+        "portKey": "OutletDischarge"
+      },
+      "to": {
+        "nodeId": "c5da62e7190a",
+        "portKey": "Inlet"
+      },
+      "points": null
+    },
+    {
+      "id": "a806530aa15a",
+      "kind": "Fluid",
+      "from": {
+        "nodeId": "c5da62e7190a",
+        "portKey": "OutletGas"
+      },
+      "to": {
+        "nodeId": "7e4814b97018",
+        "portKey": "Inlet2"
+      },
+      "points": null
+    },
+    {
+      "id": "f9ccc310ebc5",
+      "kind": "Fluid",
+      "from": {
+        "nodeId": "7e4814b97018",
+        "portKey": "Outlet2"
+      },
+      "to": {
+        "nodeId": "d385ad9d2766",
+        "portKey": "Inlet"
+      },
+      "points": null
+    },
+    {
+      "id": "8b34905d6e89",
+      "kind": "Fluid",
+      "from": {
+        "nodeId": "c5da62e7190a",
+        "portKey": "OutletLiquid"
+      },
+      "to": {
+        "nodeId": "57691b3ffc4e",
+        "portKey": "Inlet"
+      },
+      "points": null
+    },
+    {
+      "id": "18ff39cfb252",
+      "kind": "Fluid",
+      "from": {
+        "nodeId": "57691b3ffc4e",
+        "portKey": "Outlet"
+      },
+      "to": {
+        "nodeId": "eb272eed86d4",
+        "portKey": "Inlet"
+      },
+      "points": null
+    },
+    {
+      "id": "5c05f91bcc13",
+      "kind": "Fluid",
+      "from": {
+        "nodeId": "eb272eed86d4",
+        "portKey": "Outlet"
+      },
+      "to": {
+        "nodeId": "d3e6c89dace7",
+        "portKey": "InletSuction"
+      },
+      "points": null
+    },
+    {
+      "id": "a86509e93897",
+      "kind": "Fluid",
+      "from": {
+        "nodeId": "2c2d63048f85",
+        "portKey": "Port"
+      },
+      "to": {
+        "nodeId": "c44776d7a0cb",
+        "portKey": "Inlet2"
+      },
+      "points": null
+    },
+    {
+      "id": "e2dc01aa717b",
+      "kind": "Fluid",
+      "from": {
+        "nodeId": "c44776d7a0cb",
+        "portKey": "Outlet2"
+      },
+      "to": {
+        "nodeId": "8f3b260bf235",
+        "portKey": "Port"
+      },
+      "points": null
+    },
+    {
+      "id": "f2c5954323b0",
+      "kind": "Fluid",
+      "from": {
+        "nodeId": "b2def2f6128f",
+        "portKey": "Port"
+      },
+      "to": {
+        "nodeId": "eb272eed86d4",
+        "portKey": "Inlet2"
+      },
+      "points": null
+    },
+    {
+      "id": "2484330603ef",
+      "kind": "Fluid",
+      "from": {
+        "nodeId": "eb272eed86d4",
+        "portKey": "Outlet2"
+      },
+      "to": {
+        "nodeId": "386f20512a60",
+        "portKey": "Port"
+      },
+      "points": null
+    },
+    {
+      "id": "0ab668618d45",
+      "kind": "Signal",
+      "from": {
+        "nodeId": "d385ad9d2766",
+        "portKey": "Outlet"
+      },
+      "to": {
+        "nodeId": "7e4814b97018",
+        "portKey": "Signal"
+      },
+      "points": null
+    },
+    {
+      "id": "1b331efc7672",
+      "kind": "Signal",
+      "from": {
+        "nodeId": "eb272eed86d4",
+        "portKey": "Outlet"
+      },
+      "to": {
+        "nodeId": "57691b3ffc4e",
+        "portKey": "Signal"
+      },
+      "points": null
+    }
+  ],
+  "study": null
+}
